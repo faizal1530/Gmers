@@ -6,3 +6,5 @@ dist/
 .env.*
 data/
 *.csv
+apps/web/e2e/out/
+apps/web/dist/

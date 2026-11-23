@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { GapleConfig } from "@gmers/game-engine";
 
 /** Semua angka dan jalur yang boleh diubah ada di sini (dan lewat variabel lingkungan GMERS_*), bukan di kode. */
@@ -26,6 +27,10 @@ export interface ServerConfig {
   roomLogFile: string;
   /** Null = tidak mencatat peristiwa ke CSV. */
   eventsCsvFile: string | null;
+  /** Folder hasil build klien web yang disajikan server (null = tidak menyajikan situs). */
+  staticDir: string | null;
+  /** Token rahasia untuk /admin/events.csv. Null = endpoint dimatikan. Tidak ada nilai default. */
+  adminToken: string | null;
   /** Garam untuk hash token perangkat (device_id di CSV dan token di log). Isi lewat GMERS_HASH_SALT. */
   hashSalt: string;
   /** Penimpa aturan Gaple (parameter mesin). `players` dan `openerSeat` diatur server. */
@@ -51,6 +56,8 @@ export const defaultServerConfig: ServerConfig = {
   dataDir: "data",
   roomLogFile: "rooms.jsonl",
   eventsCsvFile: "events.csv",
+  staticDir: null,
+  adminToken: null,
   hashSalt: "gmers-dev-salt",
   game: {},
 };
@@ -72,8 +79,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     roomIdleTtlMs: num(env.GMERS_ROOM_IDLE_TTL_MS, d.roomIdleTtlMs),
     cleanupIntervalMs: num(env.GMERS_CLEANUP_INTERVAL_MS, d.cleanupIntervalMs),
     heartbeatIntervalMs: num(env.GMERS_HEARTBEAT_MS, d.heartbeatIntervalMs),
-    dataDir: env.GMERS_DATA_DIR ?? d.dataDir,
+    dataDir: env.DATA_DIR ?? env.GMERS_DATA_DIR ?? d.dataDir,
     eventsCsvFile: env.GMERS_EVENTS_CSV === "" ? null : (env.GMERS_EVENTS_CSV ?? d.eventsCsvFile),
-    hashSalt: env.GMERS_HASH_SALT ?? d.hashSalt,
+    staticDir: env.GMERS_STATIC_DIR === "" ? null : (env.GMERS_STATIC_DIR ?? fileURLToPath(new URL("../../web/dist", import.meta.url))),
+    adminToken: env.ADMIN_TOKEN ? env.ADMIN_TOKEN : null,
+    hashSalt: env.HASH_SALT ?? env.GMERS_HASH_SALT ?? d.hashSalt,
   };
 }

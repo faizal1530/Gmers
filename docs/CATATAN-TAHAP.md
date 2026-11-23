@@ -76,3 +76,26 @@ Diisi Claude Code di akhir setiap tahap: apa yang dibangun, keputusan, utang tek
 2. Boleh lewat otomatis lebih cepat saat tidak ada langkah sah? (default: tunggu 60 detik)
 3. Boleh pemain bergabung ke game yang sedang berjalan sebagai penonton? (default: tidak; di luar cakupan handover)
 4. Pertanyaan Tahap A (arah putar, pembuka 2-3 pemain, pemecah seri) masih terbuka; server memakai default mesin.
+
+## MVP Tahap C: klien web (24 Nov 2026), tag `mvp-C`
+
+### Dibangun
+- **Langkah 0, kelompok menetap (server):** kode di tautan = `group_id` yang tidak pernah kedaluwarsa. Sesi room (`room_id`) boleh dibersihkan setelah 24 jam; membuka kode yang sama membuat sesi baru dengan `group_id` sama (bukan galat). Catatan `group` di log JSONL tidak ikut dipadatkan. Pesan baru: `open_link {groupId, token}` (mencatat `invite_link_opened`, membalas `group_info` tanpa membuat sesi). `join` kini memakai `groupId`. `state.room` memuat `groupId` (tetap) dan `id` (sesi). Semua peristiwa membawa `group_id`; `room_created` diganti `group_created`. Nama panggilan server: 2 sampai 16 karakter. Pembatas laju chat server: 5 pesan per 10 detik (`RATE_LIMITED`).
+- **Server menyajikan situs:** `apps/web/dist` disajikan satu proses yang sama (rute klien dijawab `index.html`, jalur aset ber-hash di-cache panjang), dengan header keamanan (CSP tanpa pihak ketiga, `no-referrer`, dll.). Font Plus Jakarta Sans di-host sendiri lewat `@fontsource` (tidak ada permintaan ke Google Fonts).
+- **`apps/web` (Vite + TypeScript, tanpa kerangka):** beranda (nama + Buat room), masuk lewat tautan, ruang tunggu (kursi, Siap/Terputus, Salin, Bagikan ke WhatsApp lewat `wa.me`), meja Gaple, chat, hasil + Main lagi, sambung ulang otomatis, halaman tidak ditemukan, `/privasi` (DRAF). Semua teks di `src/i18n/id.ts` (ada uji yang memindai kode agar tidak ada kalimat di luar berkas itu). Terang/gelap sesuai token, `prefers-reduced-motion` dihormati, target sentuh minimal 44 px.
+- Sambung ulang: backoff 0,5, 1, 2, 4, lalu 5 detik; ping tiap 20 detik; pemicu langsung saat `online` dan saat tab kembali aktif; banner "Menyambung kembali..." dan kartu tetap tampil tetapi tidak bisa dikirim selama terputus; langkah tidak diantre.
+- Token perangkat dan nama di `localStorage` dengan `try/catch` dan cadangan memori.
+
+### Uji
+- 43 uji logika dan komponen (jsdom, socket palsu): hanya langkah dari `yourMoves` yang bisa dikirim (kartu redup tidak mengirim apa pun, pilihan ujung saat cocok di dua sisi, Lewat hanya bila tak ada langkah lain, bukan giliran = semua nonaktif), alur tautan, sambung ulang dan backoff, HTML di chat tampil sebagai teks, penanda belum dibaca, pembatas laju.
+- **E2E Chromium sungguhan** (`pnpm e2e`, bagian dari `pnpm verify`): 4 konteks browser membuka satu tautan, masuk, bermain game 1 sampai selesai, satu pemain refresh di tengah dan kembali ke kursi dengan kartu yang sama tanpa mengisi nama lagi, rematch, game 2 sampai selesai; chat dengan HTML; tanpa overflow horizontal di 360 px (beranda, formulir masuk, ruang tunggu, meja, chat terbuka, hasil); tanpa galat konsol; tanpa permintaan ke pihak ketiga. Tangkapan layar (terang dan gelap) di `apps/web/e2e/out/` (tidak di-commit). Skrip menyatakan SKIP (bukan gagal) bila Chromium tidak tersedia.
+- E2E menemukan satu bug nyata: Vite menyisipkan font kecil sebagai `data:` URL yang diblokir CSP. Diperbaiki dengan `assetsInlineLimit: 0`.
+
+### Keputusan otomatis (Tahap C)
+1. **Vanilla TypeScript, bukan Preact.** Alasan: ukuran (JS 28 KB), tanpa dependensi runtime selain font, dan semua teks lewat node teks (tanpa `innerHTML`) sehingga XSS tertutup. Mengubah: tulis ulang `src/views/*` sebagai komponen; logika (`logic.ts`, `net.ts`, `storage.ts`) tetap.
+2. **"Siap" = terhubung.** Server tidak punya konsep siap; kursi tampil "Siap" bila pemain terhubung, "Terputus" bila tidak.
+3. **Satu ketukan memasang kartu** bila hanya satu ujung sah; bila dua ujung sah muncul pilihan ujung.
+4. **Chat dibuka dari tombol di header** (bukan tombol melayang) supaya tidak menutupi kartu; riwayat chat tidak dikirim ulang saat refresh (server tidak menyimpannya).
+5. **Rantai kartu dibungkus beberapa baris** (bukan satu baris panjang yang digulir) agar tidak ada overflow; ujung kiri dan kanan selalu ditampilkan sebagai angka besar di atas papan, dan kartu pertama/terakhir diberi bingkai.
+6. **Pembuat room wajib mengisi nama dulu di beranda**, supaya `create_room` langsung membawa nama.
+7. Tab kedua dengan token yang sama menggantikan yang pertama (tab lama berhenti menyambung dan menjelaskan alasannya) agar tidak saling berebut sambung ulang.

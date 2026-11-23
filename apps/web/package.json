@@ -3,5 +3,25 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Placeholder. Diisi di Tahap C."
+  "description": "Klien Room Web Gaple (Vite + TypeScript, tanpa kerangka).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "tsx e2e/run.ts"
+  },
+  "dependencies": {
+    "@fontsource/plus-jakarta-sans": "^5.1.0",
+    "@gmers/game-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@gmers/server": "workspace:*",
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.0",
+    "playwright-core": "1.63.0",
+    "tsx": "^4.19.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
 }
