@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Gmers: aplikasi chat dengan game Ludo dan Gaple untuk dimainkan bersama teman. Tanpa lawan komputer.">
+<meta property="og:title" content="Gmers: ngobrol, lalu main bareng teman">
+<meta property="og:description" content="Chat, suara, dan game Ludo dan Gaple dalam satu aplikasi. Semua lawanmu manusia.">
+<meta property="og:type" content="website">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>html{color-scheme:light}body{margin:0;font:14px/1.4 system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Gmers</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">
+<style>
+:root{--bg:#F7F3EA;--bg2:#EFE8D8;--card:#FFFFFF;--ink:#14302D;--mute:#5B6B68;--line:#DDD5C3;--teal:#0F6B63;--teal-d:#0B4F49;--coral:#C7401C;--gold:#F2B33D;--on-teal:#FFFFFF;--hero:#0F3F3B;--hero-ink:#F7F3EA}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1F1D;--bg2:#13292A;--card:#173331;--ink:#F0EBDD;--mute:#A5B5B1;--line:#2A4642;--teal:#3FB6A8;--teal-d:#2E8F84;--coral:#F0795A;--gold:#F2B33D;--on-teal:#06211E;--hero:#0A2B29;--hero-ink:#F7F3EA;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0E1F1D;--bg2:#13292A;--card:#173331;--ink:#F0EBDD;--mute:#A5B5B1;--line:#2A4642;--teal:#3FB6A8;--teal-d:#2E8F84;--coral:#F0795A;--gold:#F2B33D;--on-teal:#06211E;--hero:#0A2B29;--hero-ink:#F7F3EA;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 'Plus Jakarta Sans',system-ui,sans-serif;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:inherit}
+.w{max-width:1080px;margin:0 auto}
+h1,h2,h3{line-height:1.12;margin:0;text-wrap:balance;letter-spacing:-.02em}
+h1{font-size:clamp(34px,6.4vw,60px);font-weight:800}
+h2{font-size:clamp(26px,4vw,38px);font-weight:800}
+h3{font-size:18px;font-weight:700;letter-spacing:-.01em}
+p{margin:0}
+.eyebrow{font-size:12.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--coral)}
+.muted{color:var(--mute)}
+nav{display:flex;align-items:center;justify-content:space-between;padding:18px 0}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;line-height:1}
+.logo .mk{width:40px;height:40px;display:block;flex:none}.logo .wm{height:24px;width:auto;display:block;color:var(--ink)}
+.logo .g{fill:var(--gold)}.logo .t{fill:var(--teal)}
+nav .links{display:flex;gap:22px;align-items:center;font-weight:600;font-size:14.5px}
+nav .links a{text-decoration:none;color:var(--mute)}nav .links a:hover{color:var(--ink)}
+@media(max-width:720px){nav .links a.h{display:none}}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 20px;border-radius:14px;font-weight:700;font-size:15px;text-decoration:none;border:1.5px solid transparent;cursor:pointer;font-family:inherit;min-height:48px}
+.btn.p{background:var(--teal);color:var(--on-teal)}.btn.p:hover{background:var(--teal-d)}
+.btn.l{border-color:var(--line);background:var(--card);color:var(--ink)}
+.btn[aria-disabled=true]{opacity:.72;cursor:default;pointer-events:none}
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;padding:30px 0 70px}
+@media(max-width:860px){.hero{grid-template-columns:1fr;gap:36px;padding-bottom:50px}}
+.hero .lead{font-size:clamp(17px,2.2vw,20px);color:var(--mute);max-width:34em;margin-top:18px}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+.soon{font-size:12.5px;color:var(--mute);margin-top:12px}
+.store{flex-direction:column;align-items:flex-start;gap:0;padding:10px 18px;line-height:1.25}
+.store small{font-weight:500;font-size:11.5px;opacity:.85}
+.stage{background:var(--hero);border-radius:32px;padding:34px 20px 0;position:relative;overflow:hidden;min-height:480px;display:flex;justify-content:center;align-items:flex-end}
+.dice,.dom{position:absolute}
+.phone{width:min(270px,100%);background:var(--bg);border-radius:30px 30px 0 0;border:7px solid #0A2B29;border-bottom:0;padding:14px 12px 0;height:430px;display:flex;flex-direction:column;gap:9px;position:relative;z-index:2}
+.ph-top{display:flex;align-items:center;gap:9px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+.av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff;font-size:13px;flex:none}
+.badge{position:relative}.badge:after{content:"";position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#7A5AA6;border:2px solid var(--bg)}
+.msg{max-width:84%;padding:8px 11px;border-radius:14px;font-size:12.5px;line-height:1.35}
+.msg.a{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px;align-self:flex-start}
+.msg.b{background:var(--teal);color:var(--on-teal);border-bottom-right-radius:4px;align-self:flex-end}
+.inv{background:var(--card);border:1.5px solid var(--teal);border-radius:16px;padding:11px;font-size:12.5px;display:flex;flex-direction:column;gap:8px}
+.inv b{font-size:13.5px}
+.inv .row{display:flex;gap:6px}
+.inv .row span{flex:1;text-align:center;border-radius:9px;padding:6px 0;font-weight:700;font-size:11.5px;background:var(--teal);color:var(--on-teal)}
+.inv .row span.o{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.modes{display:flex;gap:5px;font-size:11px;font-weight:700}
+.modes span{border:1px solid var(--line);border-radius:99px;padding:3px 9px;color:var(--mute)}
+.modes span.on{background:var(--bg2);color:var(--teal);border-color:var(--teal)}
+section{padding:64px 0}
+.sec-h{max-width:640px;display:flex;flex-direction:column;gap:12px;margin-bottom:34px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:s}
+@media(max-width:820px){.steps{grid-template-columns:1fr}}
+.step{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;display:flex;flex-direction:column;gap:10px}
+.step:before{counter-increment:s;content:counter(s);width:34px;height:34px;border-radius:50%;background:var(--gold);color:#3A2A00;font-weight:800;display:grid;place-items:center}
+.band{background:var(--bg2);margin-left:calc(-1 * max(16px,env(safe-area-inset-left,0px)));margin-right:calc(-1 * max(16px,env(safe-area-inset-right,0px)));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.f{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px}
+.f .ic{width:42px;height:42px;border-radius:13px;background:var(--bg2);display:grid;place-items:center;color:var(--teal)}
+.f p{color:var(--mute);font-size:15px}
+.fair{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:start}
+@media(max-width:820px){.fair{grid-template-columns:1fr}}
+.rules{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+.rules li{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;align-items:flex-start}
+.rules li:before{content:"";flex:none;width:22px;height:22px;border-radius:50%;background:var(--teal);margin-top:2px;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.5 17.2 4.8 12.5l1.4-1.4 3.3 3.3 8.3-8.3 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.5 17.2 4.8 12.5l1.4-1.4 3.3 3.3 8.3-8.3 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat}
+.rules b{display:block}
+.rules span{color:var(--mute);font-size:14.5px}
+.ranks{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.rk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:7px 14px 7px 8px;font-weight:700;font-size:14px}
+.rk i{width:22px;height:22px;border-radius:50%;display:block}
+details{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:0 18px}
+details+details{margin-top:10px}
+summary{cursor:pointer;font-weight:700;padding:16px 0;list-style:none;display:flex;justify-content:space-between;gap:14px;min-height:48px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"+";font-size:22px;color:var(--teal);font-weight:500}
+details[open] summary:after{content:"−"}
+details p{padding:0 0 16px;color:var(--mute)}
+.dl{background:var(--hero);color:var(--hero-ink);border-radius:32px;padding:clamp(28px,6vw,60px);display:flex;flex-direction:column;gap:16px;align-items:flex-start}
+.dl h2{color:var(--hero-ink)}.dl .muted{color:#A9C0BC}
+.dl .btn.p{background:var(--gold);color:#3A2A00}
+.dl .btn.l{background:transparent;border-color:#3C6762;color:var(--hero-ink)}
+footer{padding:36px 0 44px;display:flex;flex-wrap:wrap;gap:12px 28px;justify-content:space-between;color:var(--mute);font-size:14px}
+footer a{text-decoration:none}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+</style>
+
+<div class="w">
+<nav>
+ <a class="logo" href="#" aria-label="Gmers, beranda"><svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><rect class="t" width="100" height="100" rx="26"/><path class="g" transform="translate(19.6 81.5) scale(.09 -.09)" d="M379 1Q267 1 187.5 41.5Q108 82 66.5 156.5Q25 231 25 332Q25 429 56.5 498.5Q88 568 140.0 612.5Q192 657 255.0 678.5Q318 700 382 700Q466 700 526.0 675.5Q586 651 618.0 612.0Q650 573 650 531Q650 486 633.5 461.0Q617 436 591.5 426.0Q566 416 539 416Q505 416 485.5 423.5Q466 431 446.0 438.0Q426 445 392 445Q327 445 288.5 406.0Q250 367 250 294Q250 251 268.0 223.0Q286 195 315.5 181.0Q345 167 379 167Q413 167 435.5 175.5Q458 184 469.0 194.0Q480 204 480 209Q413 209 372.0 224.5Q331 240 331 285Q331 323 358.0 348.5Q385 374 458 374Q529 374 569.5 357.5Q610 341 626.5 306.0Q643 271 643 215Q643 155 607.0 106.0Q571 57 511.0 28.5Q451 0 379 1Z"/></svg><svg class="wm" viewBox="0 0 2881 700" role="img" aria-label="Gmers"><g transform="translate(0 700) scale(1 -1)" fill="currentColor"><path transform="translate(0 0)" d="M379 1Q267 1 187.5 41.5Q108 82 66.5 156.5Q25 231 25 332Q25 429 56.5 498.5Q88 568 140.0 612.5Q192 657 255.0 678.5Q318 700 382 700Q466 700 526.0 675.5Q586 651 618.0 612.0Q650 573 650 531Q650 486 633.5 461.0Q617 436 591.5 426.0Q566 416 539 416Q505 416 485.5 423.5Q466 431 446.0 438.0Q426 445 392 445Q327 445 288.5 406.0Q250 367 250 294Q250 251 268.0 223.0Q286 195 315.5 181.0Q345 167 379 167Q413 167 435.5 175.5Q458 184 469.0 194.0Q480 204 480 209Q413 209 372.0 224.5Q331 240 331 285Q331 323 358.0 348.5Q385 374 458 374Q529 374 569.5 357.5Q610 341 626.5 306.0Q643 271 643 215Q643 155 607.0 106.0Q571 57 511.0 28.5Q451 0 379 1Z"/><path transform="translate(675 0)" d="M362 0Q314 0 298.0 33.0Q282 66 282 126Q282 176 279.0 209.0Q276 242 251 242Q230 242 221.5 227.0Q213 212 212.0 186.0Q211 160 211 126Q211 91 206.5 62.5Q202 34 185.5 17.5Q169 1 133 1Q98 1 76.5 26.0Q55 51 44.0 92.0Q33 133 29.0 181.0Q25 229 25 275Q25 359 40.0 414.5Q55 470 104 484Q134 493 161.0 485.0Q188 477 197 455Q207 460 221.0 465.5Q235 471 265 471Q295 471 324.0 456.0Q353 441 366 412Q390 440 417.0 456.0Q444 472 491 471Q554 470 599.0 432.5Q644 395 668.5 332.5Q693 270 693 194Q693 145 684.5 100.5Q676 56 653.5 28.0Q631 0 590 0Q554 0 537.5 17.0Q521 34 516.5 62.5Q512 91 512 126Q512 160 511.0 186.0Q510 212 502.0 227.0Q494 242 472 242Q456 242 450.0 227.0Q444 212 443.5 186.0Q443 160 442 126Q441 66 424.5 33.0Q408 0 362 0Z"/><path transform="translate(1393 0)" d="M276 0Q201 0 144.5 29.5Q88 59 56.5 110.5Q25 162 25 229Q25 294 56.5 349.0Q88 404 143.5 437.0Q199 470 271 470Q338 470 386.0 443.0Q434 416 459.5 374.5Q485 333 485 287Q485 241 464.0 211.5Q443 182 409.5 166.5Q376 151 338.0 146.0Q300 141 265.0 144.5Q230 148 206 156Q224 127 251.5 116.5Q279 106 309.5 107.5Q340 109 365 114Q396 121 416.0 111.0Q436 101 437 79Q438 61 424.5 43.0Q411 25 376.0 12.5Q341 0 276 0ZM209 278Q219 262 238.0 255.5Q257 249 276.5 251.0Q296 253 309.5 262.0Q323 271 323 287Q323 304 309.5 317.5Q296 331 267 331Q239 331 224.0 313.5Q209 296 209 278Z"/><path transform="translate(1903 0)" d="M132 0Q98 0 76.5 22.5Q55 45 44.0 83.0Q33 121 29.0 170.0Q25 219 25 271Q25 306 26.5 342.5Q28 379 36.5 410.0Q45 441 65.5 460.5Q86 480 124 480Q151 480 173.0 467.5Q195 455 201 430Q224 451 259.5 460.5Q295 470 333 470Q365 470 398.0 454.5Q431 439 454.0 412.0Q477 385 477 351Q477 322 455.5 296.0Q434 270 395 270Q378 270 367.0 274.5Q356 279 346.0 283.0Q336 287 322 287Q285 287 254.5 257.5Q224 228 224 178Q224 152 222.5 121.5Q221 91 213.5 63.0Q206 35 187.0 17.5Q168 0 132 0Z"/><path transform="translate(2405 0)" d="M217 0Q129 0 77.0 29.0Q25 58 25 104Q25 136 46.5 151.5Q68 167 98 167Q122 167 133.5 159.0Q145 151 154.0 143.0Q163 135 176 135Q197 135 197 150Q197 170 173.5 179.0Q150 188 115 204Q67 227 46.0 257.5Q25 288 25 320Q25 358 52.0 392.0Q79 426 128.5 448.0Q178 470 247 470Q305 470 351.0 454.0Q397 438 424.0 410.5Q451 383 451 350Q451 319 431.0 303.0Q411 287 379 287Q361 287 350.5 292.5Q340 298 331.5 303.0Q323 308 308 308Q300 308 294.0 302.5Q288 297 288 289Q288 283 293.0 277.0Q298 271 310 267Q341 257 370.5 241.5Q400 226 419.5 201.5Q439 177 439 139Q439 74 378.0 37.0Q317 0 217 0Z"/></g></svg>
+ <div class="links"><a class="h" href="#cara">Cara kerja</a><a class="h" href="#fitur">Fitur</a><a class="h" href="#adil">Aturan main</a><a class="h" href="#faq">FAQ</a><a class="btn p" href="#unduh" style="padding:9px 16px;min-height:40px;color:var(--on-teal)">Unduh</a></div>
+</nav>
+
+<header class="hero">
+ <div>
+  <p class="eyebrow">Main bareng, bukan lawan komputer</p>
+  <h1 style="margin-top:12px">Ngobrol, lalu main bareng teman.</h1>
+  <p class="lead">Gmers adalah aplikasi chat dengan game Ludo dan Gaple di dalamnya. Ajak teman dari chat, pilih ngobrol lewat suara atau cukup ketik, dan main seperti sedang duduk satu meja. Semua lawanmu manusia.</p>
+  <div class="cta">
+   <a class="btn p store" data-store="android" href="#unduh" aria-disabled="true"><small>Segera hadir di</small>Google Play</a>
+   <a class="btn l store" data-store="ios" href="#unduh" aria-disabled="true"><small>Segera hadir di</small>App Store</a>
+   <a class="btn l" data-demo href="demo/" hidden>Coba demo</a>
+  </div>
+  <p class="soon" id="soon">Aplikasi sedang dibangun. Tombol unduh aktif begitu tersedia.</p>
+ </div>
+ <div class="stage" aria-hidden="true">
+  <svg class="dice" style="left:22px;top:26px" width="64" height="64" viewBox="0 0 64 64"><g transform="rotate(-12 32 32)"><rect x="6" y="6" width="52" height="52" rx="12" fill="#F7F3EA"/><circle cx="20" cy="20" r="5" fill="#C7401C"/><circle cx="44" cy="20" r="5" fill="#14302D"/><circle cx="32" cy="32" r="5" fill="#14302D"/><circle cx="20" cy="44" r="5" fill="#14302D"/><circle cx="44" cy="44" r="5" fill="#14302D"/></g></svg>
+  <svg class="dom" style="right:20px;top:60px" width="56" height="96" viewBox="0 0 56 96"><g transform="rotate(14 28 48)"><rect x="6" y="4" width="44" height="88" rx="10" fill="#F7F3EA"/><rect x="10" y="46" width="36" height="3" fill="#14302D" opacity=".5"/><circle cx="19" cy="18" r="4.5" fill="#14302D"/><circle cx="37" cy="30" r="4.5" fill="#14302D"/><circle cx="28" cy="24" r="4.5" fill="#14302D"/><circle cx="19" cy="66" r="4.5" fill="#C7401C"/><circle cx="37" cy="78" r="4.5" fill="#C7401C"/></g></svg>
+  <div class="phone">
+   <div class="ph-top"><div class="av badge" style="background:#E58B6B">R</div><div><b style="font-size:13.5px">Rina Putri</b><div class="muted" style="font-size:11px">Siap main</div></div></div>
+   <div class="msg a">Malam ini gaple yuk?</div>
+   <div class="msg b">Boleh, jam 8 ya</div>
+   <div class="inv"><b>Rina mengajak main Gaple</b><div class="muted" style="font-size:11.5px">4 pemain · malam ini</div><div class="modes"><span class="on">Suara</span><span>Chat</span><span>Senyap</span></div><div class="row"><span>Gabung</span><span class="o">Nanti</span></div></div>
+   <div class="msg a">Bayu sama Dita ikut juga</div>
+  </div>
+ </div>
+</header>
+</div>
+
+<div class="band"><div class="w"><section id="cara">
+ <div class="sec-h"><p class="eyebrow">Cara kerja</p><h2>Dari obrolan ke permainan dalam satu ketukan</h2></div>
+ <div class="steps">
+  <div class="step"><h3>Ajak dari chat</h3><p class="muted">Ketuk ikon dadu di chat dengan temanmu, pilih Ludo atau Gaple, lalu kirim undangan. Mau main nanti? Pilih giliran 24 jam.</p></div>
+  <div class="step"><h3>Pilih cara ngobrolnya</h3><p class="muted">Suara kalau ingin seru, Chat kalau sedang di tempat ramai, atau Senyap tanpa suara dan getar sama sekali. Tiap pemain bebas memilih.</p></div>
+  <div class="step"><h3>Main dan naik kelas</h3><p class="muted">Menang di mode Ranked menambah trofi. Dari Pemula sampai Raja, kelasmu terlihat di avatar semua orang.</p></div>
+ </div>
+</section></div></div>
+
+<div class="w">
+<section id="fitur">
+ <div class="sec-h"><p class="eyebrow">Fitur</p><h2>Semua yang dibutuhkan untuk main bareng</h2><p class="muted">Gmers dibuat supaya obrolan dan permainan terasa menyatu, bukan dua aplikasi yang ditempel.</p></div>
+ <div class="feat">
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/></svg></div><h3>Chat 1-1, grup, dan room sekali pakai</h3><p>Room untuk malam main bareng terhapus sendiri setelah 24 jam tidak dipakai. Rapi tanpa perlu dibereskan.</p></div>
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div><h3>Ludo dan Gaple</h3><p>Dua permainan yang semua orang sudah kenal. Game lain bisa diaktifkan dari Store saat tersedia.</p></div>
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg></div><h3>Suara, panggilan, dan mode Senyap</h3><p>Ngobrol lewat suara sambil main, telepon atau video call teman, atau main diam-diam di tempat umum.</p></div>
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div><h3>Avatar dengan kelas</h3><p>Pilih avatarmu sejak awal. Lencana kelas Pemula, Jago, Pro, Master, hingga Raja menempel di avatar.</p></div>
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg></div><h3>Komunitas untuk kenalan</h3><p>Gabung komunitas seperti Gaple Bandung, baca dan tulis postingan, lalu ikuti orang yang seru. Berteman setelah saling ikuti atau saling simpan kontak.</p></div>
+  <div class="f"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Live: tonton atau gabung</h3><p>Lihat pertandingan teman, ikut ngobrol dengan penonton, dan bergabung ke kursi kosong kalau mau.</p></div>
+ </div>
+</section>
+
+<section id="adil">
+ <div class="fair">
+  <div class="sec-h" style="margin:0"><p class="eyebrow">Aturan main yang adil</p><h2>Menang karena main, bukan karena bayar</h2><p class="muted">Kami memisahkan uang dari kemenangan sejak awal. Ini sebabnya Gmers dirancang dengan tiga jenis nilai yang tidak bisa saling ditukar.</p>
+   <div class="ranks" aria-label="Kelas pemain"><span class="rk"><i style="background:#7A8F8C"></i>Pemula</span><span class="rk"><i style="background:#7C93A8"></i>Jago</span><span class="rk"><i style="background:#D99A12"></i>Pro</span><span class="rk"><i style="background:#7A5AA6"></i>Master</span><span class="rk"><i style="background:#B5280A"></i>Raja</span></div>
+  </div>
+  <ul class="rules">
+   <li><div><b>Trofi hanya dari bermain</b><span>Tidak bisa dibeli, dikirim, atau dijual. Kelasmu mencerminkan permainanmu.</span></div></li>
+   <li><div><b>Koin hanya untuk gaya</b><span>Avatar, emoji, dan skin dadu. Koin tidak memberi keuntungan di papan.</span></div></li>
+   <li><div><b>Tiket tidak bisa dibeli</b><span>Didapat dari kemenangan atau pemberian teman.</span></div></li>
+   <li><div><b>Iklan tidak masuk chat atau game</b><span>Iklan hanya di feed Komunitas dan Live, dan bisa disembunyikan.</span></div></li>
+   <li><div><b>Orang asing tidak bisa langsung kirim pesan</b><span>Chat dan ajak main hanya untuk teman.</span></div></li>
+  </ul>
+ </div>
+</section>
+
+<section id="faq">
+ <div class="sec-h"><p class="eyebrow">Pertanyaan umum</p><h2>FAQ</h2></div>
+ <div style="max-width:760px">
+  <details><summary>Apakah Gmers gratis?</summary><p>Ya, mengunduh dan bermain gratis. Pengeluaran hanya untuk Koin yang dipakai membeli tampilan seperti avatar, emoji, dan skin dadu. Itu tidak mempengaruhi menang atau kalah.</p></details>
+  <details><summary>Lawannya siapa? Ada lawan komputer?</summary><p>Tidak ada lawan komputer. Kamu bermain dengan teman, atau dengan pemain sungguhan di mode Ranked acak.</p></details>
+  <details><summary>Perlu bicara lewat suara?</summary><p>Tidak. Tiap pemain memilih sendiri: Suara, Chat, atau Senyap tanpa suara dan getar.</p></details>
+  <details><summary>Ada hadiah uang?</summary><p>Belum. Kami baru membangun permainan dan komunitasnya. Kalau nanti ada turnamen, hadiahnya akan diumumkan dengan syarat yang jelas, dan kamu tidak perlu membayar untuk ikut.</p></details>
+  <details><summary>Kenapa harus memasukkan nomor HP?</summary><p>Untuk mengamankan akun dan mencegah akun ganda. Nomormu tidak ditampilkan ke pemain lain.</p></details>
+  <details><summary>Android atau iOS?</summary><p>Keduanya direncanakan rilis bersamaan.</p></details>
+ </div>
+</section>
+
+<section id="unduh" style="padding-top:20px">
+ <div class="dl">
+  <p class="eyebrow" style="color:var(--gold)">Unduh</p>
+  <h2>Siapkan meja, ajak temanmu.</h2>
+  <p class="muted" style="max-width:34em">Gmers segera hadir untuk Android dan iOS. Sementara itu, coba alurnya lewat demo klik di browser.</p>
+  <div class="cta" style="margin-top:6px">
+   <a class="btn p store" data-store="android" href="#unduh" aria-disabled="true"><small>Segera hadir di</small>Google Play</a>
+   <a class="btn l store" data-store="ios" href="#unduh" aria-disabled="true"><small>Segera hadir di</small>App Store</a>
+   <a class="btn l" data-demo href="demo/" hidden>Coba demo di browser</a>
+  </div>
+ </div>
+</section>
+
+<footer>
+ <span>© <span id="yr">2026</span> Gmers</span>
+ <span style="display:flex;gap:20px"><a href="#fitur">Fitur</a><a href="#adil">Aturan main</a><a href="#faq">FAQ</a></span>
+</footer>
+</div>
+
+<script>
+/* Isi alamat toko aplikasi di sini setelah aplikasi dirilis. Kosong = tombol tampil "Segera hadir". */
+var GMERS={android:'',ios:'',demo:true};
+(function(){
+ try{document.getElementById('yr').textContent=new Date().getFullYear()}catch(e){}
+ var live=false;
+ document.querySelectorAll('[data-store]').forEach(function(a){
+  var u=GMERS[a.getAttribute('data-store')];
+  if(u){a.href=u;a.removeAttribute('aria-disabled');a.target='_blank';a.rel='noopener';var s=a.querySelector('small');if(s)s.textContent='Unduh di';live=true}
+ });
+ if(live){var s=document.getElementById('soon');if(s)s.hidden=true}
+ if(GMERS.demo)document.querySelectorAll('[data-demo]').forEach(function(a){a.hidden=false});
+})();
+</script>
+
+</html>

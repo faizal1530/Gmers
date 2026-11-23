@@ -1,0 +1,64 @@
+erDiagram
+    APP_USER ||--o{ FOLLOW : mengikuti
+    APP_USER ||--o{ CONTACT_SAVE : menyimpan
+    APP_USER ||--o{ BLOCK : memblokir
+    APP_USER ||--o{ FRIENDSHIP : berteman
+    APP_USER ||--o{ STREAK : berstreak
+    CONVERSATION ||--o{ CONVERSATION_MEMBER : anggota
+    APP_USER ||--o{ CONVERSATION_MEMBER : ikut
+    CONVERSATION ||--o{ MESSAGE : berisi
+    APP_USER ||--o{ MESSAGE : kirim
+    MESSAGE ||--o| GAME_INVITE : kartu_undangan
+    MESSAGE ||--o| TICKET_REQUEST : kartu_tiket
+    FOLLOW {
+        uuid follower_id PK
+        uuid followee_id PK
+    }
+    CONTACT_SAVE {
+        uuid saver_id PK
+        uuid saved_id PK
+    }
+    FRIENDSHIP {
+        uuid user_a PK
+        uuid user_b PK
+        text basis
+        timestamptz since
+    }
+    STREAK {
+        uuid user_a PK
+        uuid user_b PK
+        int count
+        date last_day
+        int freezes
+    }
+    CONVERSATION {
+        uuid id PK
+        text kind
+        text title
+        timestamptz last_activity_at
+        timestamptz expires_at
+    }
+    MESSAGE {
+        uuid id PK
+        uuid conversation_id FK
+        uuid sender_id FK
+        text kind
+        text body
+        timestamptz deleted_at
+    }
+    GAME_INVITE {
+        uuid message_id PK
+        text game_id FK
+        text mode
+        bool live
+        bool ranked
+        bool bet_ticket
+        text state
+    }
+    TICKET_REQUEST {
+        uuid message_id PK
+        uuid requester_id FK
+        uuid target_id FK
+        date day
+        text state
+    }
