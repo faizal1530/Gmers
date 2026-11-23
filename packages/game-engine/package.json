@@ -1,0 +1,16 @@
+{
+  "name": "@gmers/game-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mesin game Gaple: TypeScript murni, deterministik, tanpa I/O.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -5,6 +5,11 @@ Aplikasi chat + game sosial (Ludo, Remi, dan Gaple dulu) untuk Android dan iOS. 
 ## MVP aktif: mulai di sini
 Pekerjaan saat ini adalah **MVP Room Web (Gaple)**. Baca `00-INDEKS-HANDOVER.md`, lalu `docs/06-handover-claude-code-mvp.md` dan `docs/05-aturan-gaple-draf.md`. Bagian produk penuh (Tiket, Trofi, ledger, Expo, Postgres, tahap 00-15 selain 03) **bukan** untuk MVP; abaikan sampai MVP lulus. Prototipe lokal: `design/gmers-prototipe-v14.html`; token desain: `design/DESIGN-TOKENS.md`.
 
+## Struktur repo MVP (Tahap A selesai)
+- `packages/game-engine`: mesin Gaple (TS murni, tanpa I/O). `src/engine.ts` (init, legalMoves, apply, status, replay), `src/config.ts` (parameter aturan), `test/` (unit, properti, simulasi).
+- `apps/server`, `apps/web`: kerangka kosong (Tahap B dan C). Untuk MVP, abaikan `apps/mobile`, `packages/shared`, `infra`, dan Postgres/Redis/Expo di bagian Teknologi di bawah.
+- Perintah: `pnpm verify` (lint + tipe + uji; simulasi 30.000 game sekitar 15 detik). Aturan Gaple hanya lewat parameter `GapleConfig`; jangan menanam konstanta aturan di kode. `Math.random` dan `Date.now` dilarang di `game-engine/src` (ESLint).
+
 ## Keputusan terkini (12 Nov 2026)
 - Nama produk: **Gmers**. Tiga game awal: Ludo (game yang lebih mudah), Remi, dan Gaple. Gaple dan Remi adalah game klaster beta pertama (mahasiswa ITB, Bandung). Aturan Remi masih draf (`docs/04-aturan-remi-draf.md`); jangan membangun mesin Remi sebelum varian dikunci.
 - Taruhan 1 Tiket tetap masuk produk dengan tiga pengaman WAJIB: sakelar mati jarak jauh, hanya 18+, dan konsultasi hukum tertulis sebelum rilis publik (spesifikasi 9.4).
