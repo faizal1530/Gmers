@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import { defaultServerConfig, type ServerConfig } from "../src/config";
 import type { Clock } from "../src/clock";
@@ -5,7 +8,9 @@ import type { ClientMessage, ServerMessage, StateMessage } from "../src/protocol
 import type { Conn } from "../src/service";
 
 export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
-  return { ...defaultServerConfig, port: 0, host: "127.0.0.1", eventsCsvFile: null, ...overrides };
+  // Tiap konfigurasi uji memakai folder data sendiri agar log antar uji tidak bercampur.
+  const dataDir = mkdtempSync(join(tmpdir(), "gmers-test-"));
+  return { ...defaultServerConfig, port: 0, host: "127.0.0.1", eventsCsvFile: null, dataDir, ...overrides };
 }
 
 export function tok(i: number | string): string {

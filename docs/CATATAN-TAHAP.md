@@ -40,3 +40,39 @@ Diisi Claude Code di akhir setiap tahap: apa yang dibangun, keputusan, utang tek
 ### Utang teknis
 - `apps/server` dan `apps/web` hanya `package.json` + `src/.gitkeep`. Belum ada ADR.
 - Isi `main` di GitHub sebelumnya di-force-push dan riwayatnya terpisah dari branch kerja ini; branch kerja menggabungkannya dengan `--allow-unrelated-histories`. Mungkin perlu dirapikan saat PR.
+
+## MVP Tahap B: server room WebSocket (23 Nov 2026), tag `mvp-B`
+
+### Dibangun (`apps/server`)
+- Satu proses Node + `ws`, room di memori. `src/config.ts` (semua angka dan jalur, dapat ditimpa lewat `GMERS_*`), `protocol.ts` (skema zod), `service.ts` (`RoomService`: seluruh logika room, tanpa socket), `server.ts` (lapisan WebSocket + `/healthz`), `store.ts` (log JSONL hanya-tambah), `events.ts` (`EventSink`, adapter CSV), `clock.ts` (jam injeksi). Jalankan: `pnpm --filter @gmers/server start` (port `PORT`/`GMERS_PORT`, default 8787).
+- Pesan klien: `create_room`, `join` (nama + token perangkat + kursi opsional; token yang sudah duduk = sambung ulang), `start` (hanya pembuat room), `play {card,end}`, `pass`, `chat`, `rematch`, `leave`, `ping`. Server: `state` (per pemain), `chat`, `error {code,message}` (Indonesia), `pong`, `left`. Klien tidak mengirim nomor kursi; server yang menetapkan dari token.
+- Privasi kartu: pesan `state` hanya berisi `yourHand` milik penerima, `cardsLeft` angka untuk kursi lain, `yourMoves` (langkah sah hanya saat gilirannya), papan, dan hasil. Seed, tangan lain, dan kartu sisihan tidak pernah dikirim, termasuk setelah game selesai (hasil hanya titik dan jumlah kartu sisa).
+- Sambung ulang: sama token = kursi, tangan, dan state sama. Tab kedua dengan token yang sama menggantikan koneksi lama (kode `REPLACED`, tutup 4001). Heartbeat: ping WebSocket tiap 25 detik; koneksi yang tak membalas diputus.
+- Timer giliran 60 detik (`turnTimeoutMs`), dijalankan server dengan jam injeksi: habis dan ada langkah sah -> `legalMoves[0]` (kartu sah pertama, ujung kiri bila ada pilihan); tidak ada langkah sah -> lewat. Timer dimulai ulang tiap langkah dan setelah restart.
+- Ketahanan: tiap kursi, mulai game, dan langkah ditulis ke `data/rooms.jsonl` (seed dan konfigurasi mesin ikut tersimpan; token disimpan sebagai hash; isi chat tidak pernah ditulis). Saat start, room dibangun ulang dengan replay mesin. Room yang tak aktif 24 jam dan tanpa pemain terhubung dihapus (sapuan tiap 10 menit) dan log dipadatkan.
+- Rematch: game baru dengan pemain yang masih duduk; pemenang game sebelumnya membuka dengan kartu bebas (`openerSeat` mesin).
+- Peristiwa ke `data/events.csv` (kolom handover bagian 6): `room_created`, `player_joined`, `player_left`, `reconnected`, `game_started`, `game_finished` (alasan + peringkat dalam kursi room), `rematch_clicked`, `message_sent` (tanpa isi). `device_id` = 16 hex pertama dari hash token + garam (`GMERS_HASH_SALT`). Alamat IP tidak pernah dibaca. Ekspor dan penghitung = Tahap D.
+
+### Uji (50 uji server + 54 mesin, `pnpm verify` hijau, 3x berturut-turut stabil)
+- Game penuh lewat WebSocket nyata untuk 2, 3, 4 klien sampai kartu habis **dan** terkunci; langkah ilegal/di luar giliran ditolak dan state tidak berubah; sambung ulang; heartbeat; restart dengan log berkas nyata (replay) lalu game dilanjutkan sampai selesai; privasi (daftar kunci pesan + `yourHand` = tangan sendiri di tiap langkah game penuh); timer giliran dengan jam palsu (ada langkah sah, hanya lewat, pembatalan oleh langkah manual); rematch; pembersihan 24 jam; CSV dan log tanpa isi chat, nama, token mentah, IP.
+- Beban: 50 room bersamaan (campuran 2/3/4 pemain), 149 koneksi, 993 langkah, selesai dalam sekitar 0,5 detik, tanpa kesalahan.
+
+### Keputusan yang saya ambil (default)
+- Memulai game: hanya pembuat room (kursi terkecil bila pembuat keluar). Rematch: siapa pun yang duduk, langsung mulai tanpa menunggu persetujuan. Alternatif: semua pemain terhubung harus menekan rematch.
+- Tidak boleh masuk room saat game berjalan (`GAME_IN_PROGRESS`); tidak ada penonton. Keluar (`leave`) hanya di lobi atau setelah game selesai; saat game berjalan pemain cukup menutup halaman, dan gilirannya dimainkan otomatis oleh timer.
+- `player_left` dicatat hanya untuk keluar eksplisit, bukan putus koneksi; `reconnected` dicatat tiap `join` dengan token yang sudah duduk. `invite_link_opened` belum ada (butuh HTTP/klien; Tahap C atau D).
+- Nama panggilan boleh kembar; pemain dibedakan lewat kursi.
+- Chat tidak disimpan dan tidak dikirim ulang saat sambung ulang (riwayat chat hilang saat refresh). Belum ada pembatas laju chat.
+
+### Belum dibangun / utang teknis
+- Pembatas laju pesan per koneksi dan pembatas pembuatan room per perangkat (cegah penyalahgunaan); perlu dipertimbangkan sebelum tautan disebar luas.
+- Timer "hanya lewat" menunggu penuh 60 detik, sesuai prompt. Usulan: lewat otomatis lebih cepat (mis. 3 detik) saat pemain tak punya langkah sah, supaya game tidak tersendat; satu parameter konfigurasi bila Anda setuju.
+- Tidak ada sajian berkas statis klien (Tahap C), tidak ada ekspor CSV berpelindung token (Tahap D), tidak ada TLS (diurus hosting).
+- Log JSONL ditulis sinkron per langkah; cukup untuk MVP, bukan untuk ribuan room.
+- Tag `mvp-A` belum bisa di-push dari sandbox ini (koneksi tag ditolak); tag dibuat lokal. Tag `mvp-B` kemungkinan sama.
+
+### Pertanyaan terbuka untuk Faizal
+1. Rematch langsung mulai oleh satu orang, atau perlu semua pemain setuju? (default: langsung)
+2. Boleh lewat otomatis lebih cepat saat tidak ada langkah sah? (default: tunggu 60 detik)
+3. Boleh pemain bergabung ke game yang sedang berjalan sebagai penonton? (default: tidak; di luar cakupan handover)
+4. Pertanyaan Tahap A (arah putar, pembuka 2-3 pemain, pemecah seri) masih terbuka; server memakai default mesin.

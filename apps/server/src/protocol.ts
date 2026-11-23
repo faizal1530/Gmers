@@ -4,6 +4,8 @@ import type { ServerConfig } from "./config";
 
 /** Pesan klien -> server. Klien hanya mengirim niat; server memutuskan. */
 export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMaxLength" | "chatMaxLength">) {
+  // Sengaja menolak karakter kontrol di nama dan chat.
+  // eslint-disable-next-line no-control-regex
   const noControl = /^[^\u0000-\u001F\u007F]*$/;
   const token = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/, "token perangkat tidak valid");
   const name = z
