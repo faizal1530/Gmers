@@ -1,0 +1,23 @@
+{
+  "name": "@gmers/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Skrip penghitung metrik 'kelompok aktif' dan uji sistem MVP.",
+  "scripts": {
+    "hitung": "tsx hitung-kelompok-aktif.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@gmers/game-engine": "workspace:*",
+    "@gmers/server": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "vitest": "^2.1.0",
+    "ws": "^8.18.0"
+  }
+}

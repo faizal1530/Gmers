@@ -446,7 +446,7 @@ describe("chat dan peristiwa", () => {
     const { conns, roomId } = table(h, 2);
     for (let i = 0; i < 200 && room(h, roomId).phase === "playing"; i++) h.clock.advance(1000);
     const fin = h.events.events.find((e) => e.event === "game_finished")!;
-    expect(fin.detail).toMatch(/^reason=(out|blocked);ranking=\d>\d$/);
+    expect(fin.detail).toMatch(/^reason=(out|blocked);players=2;ranking=\d>\d;devices=[0-9a-f]{16}\|[0-9a-f]{16}$/);
     expect(fin.gameNo).toBe(1);
     send(h, conns[1]!, { type: "leave" });
     expect(h.events.events.at(-1)).toMatchObject({ event: "player_left" });

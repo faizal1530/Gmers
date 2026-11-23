@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/dist
+**/e2e/out
+data
+*.csv
+.env
+.env.*
+design
+pemasaran
+strategi
+docs
+*.md
+!README.md

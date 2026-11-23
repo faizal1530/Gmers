@@ -39,6 +39,8 @@ interface ActiveGame {
   state: GapleState;
   /** roomSeats[kursiMesin] = kursi room. */
   roomSeats: number[];
+  /** Hash perangkat (16 hex) tiap pemain game ini, urut kursi room. Hanya untuk metrik. */
+  devices: string[];
   deadline: number | null;
   cancelTimer: (() => void) | null;
 }
@@ -192,7 +194,7 @@ export class RoomService {
           if (!room) break;
           room.gameNo = rec.gameNo;
           room.phase = "playing";
-          room.game = { state: init(rec.config, rec.seed), roomSeats: rec.roomSeats, deadline: null, cancelTimer: null };
+          room.game = { state: init(rec.config, rec.seed), roomSeats: rec.roomSeats, devices: this.deviceIds(room, rec.roomSeats), deadline: null, cancelTimer: null };
           room.lastActivity = rec.ts;
           break;
         }
@@ -254,6 +256,10 @@ export class RoomService {
     game.deadline = null;
     const winnerEngineSeat = (state.result as NonNullable<GapleState["result"]>).winner;
     room.lastWinnerSeat = game.roomSeats[winnerEngineSeat] ?? null;
+  }
+
+  private deviceIds(room: Room, roomSeats: number[]): string[] {
+    return roomSeats.map((seat) => (room.seats[seat]?.tokenHash ?? "").slice(0, 16));
   }
 
   private emit(room: Room, event: EventName, tokenHash: string | null, detail = ""): void {
@@ -378,7 +384,12 @@ export class RoomService {
     if (next.result) {
       this.markFinished(room, next);
       const ranking = next.result.ranking.map((r) => game.roomSeats[r.seat]).join(">");
-      this.emit(room, "game_finished", null, `reason=${next.result.reason};ranking=${ranking}`);
+      this.emit(
+        room,
+        "game_finished",
+        null,
+        `reason=${next.result.reason};players=${game.roomSeats.length};ranking=${ranking};devices=${game.devices.join("|")}`,
+      );
     } else {
       this.armTimer(room);
     }
@@ -594,9 +605,9 @@ export class RoomService {
     const seed = this.newSeed();
     room.gameNo += 1;
     room.phase = "playing";
-    room.game = { state: init(config, seed), roomSeats, deadline: null, cancelTimer: null };
+    room.game = { state: init(config, seed), roomSeats, devices: this.deviceIds(room, roomSeats), deadline: null, cancelTimer: null };
     this.append({ t: "start", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, seed, config, roomSeats });
-    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0}`);
+    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0};devices=${room.game?.devices.join("|") ?? ""}`);
     this.armTimer(room);
     this.broadcast(room);
   }

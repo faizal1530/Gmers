@@ -99,3 +99,39 @@ Diisi Claude Code di akhir setiap tahap: apa yang dibangun, keputusan, utang tek
 5. **Rantai kartu dibungkus beberapa baris** (bukan satu baris panjang yang digulir) agar tidak ada overflow; ujung kiri dan kanan selalu ditampilkan sebagai angka besar di atas papan, dan kartu pertama/terakhir diberi bingkai.
 6. **Pembuat room wajib mengisi nama dulu di beranda**, supaya `create_room` langsung membawa nama.
 7. Tab kedua dengan token yang sama menggantikan yang pertama (tab lama berhenti menyambung dan menjelaskan alasannya) agar tidak saling berebut sambung ulang.
+
+## MVP Tahap D: pencatatan dan siap rilis uji (24 Nov 2026), tag `mvp-D`
+
+### Dibangun
+- **Pencatatan lengkap:** kolom CSV `ts_utc, ts_wib, group_id, room_id, device_id, event, game_no, detail`. Peristiwa `group_created, invite_link_opened, player_joined, player_left, reconnected, game_started, game_finished, rematch_clicked, message_sent`. `game_started` dan `game_finished` memuat `players=`, `devices=` (hash perangkat 16 hex, dipisah `|`), `reason=`, `ranking=` (kursi room), sehingga penghitung tahu siapa bermain bersama tanpa data pribadi. `invite_link_opened` dipancarkan saat klien membuka tautan (pesan WebSocket `open_link`).
+- **Ekspor:** `GET /admin/events.csv`, token dari `ADMIN_TOKEN` (header `Authorization: Bearer` atau `?token=`), dibandingkan lewat hash dengan `timingSafeEqual`. Tanpa `ADMIN_TOKEN` di server: 503. Tanpa/salah token: 401. Berkas data lain tidak bisa diambil lewat web (diuji termasuk percobaan path traversal).
+- **Penghitung:** `scripts/hitung-kelompok-aktif.ts` (`pnpm hitung events.csv --out hasil.csv`) dengan pustaka murni `scripts/lib/metrics.ts`. Keluaran: tabel per kelompok, ringkasan (aktif, selesai game pertama, konversi tautan dibuka -> masuk, main lagi dalam 7 hari), dan CSV hasil.
+- **Privasi:** rute `/privasi` (Bahasa Indonesia, ditandai DRAF di halaman dan di berkas i18n; belum ditinjau ahli hukum).
+- **Deploy:** `Dockerfile` (dua tahap, pengguna non-root, tanpa `.env`/data, `HEALTHCHECK`), `.dockerignore`, `docs/DEPLOY.md` (opsi layanan Docker dan VPS, variabel, log, restart, ekspor, cadangan, uji asap, pemecahan masalah).
+- **Laporan:** `docs/LAPORAN-MVP.md`.
+
+### Uji
+- Penghitung: 19 uji termasuk semua kasus yang diminta (rematch hari sama, dua hari berbeda, 23.59 vs 00.01 WIB, 2 pemain, jendela 14 hari terlewat, jendela bergeser, perangkat ganda) plus parser CSV.
+- Ekspor dan server: 10 uji HTTP (401/503/200, perbandingan token, penyajian statis, header keamanan, tidak bisa mengambil log, konfigurasi dari lingkungan: PORT, DATA_DIR, HASH_SALT, ADMIN_TOKEN, `/healthz`).
+- CSV: uji sistem memeriksa seluruh kolom pada semua baris: tanpa isi chat, nama, token mentah, IP, nomor HP, dan `ADMIN_TOKEN`; log langkah juga bersih dari chat dan token mentah.
+- **Uji sistem menyeluruh** (`scripts/test/sistem.test.ts`, 6 uji): server nyata dengan jam palsu, 5 kelompok x 5 hari simulasi, pemain otomatis lewat WebSocket (termasuk putus-sambung, keluar dari kursi, rematch lintas tengah malam WIB, sesi dibersihkan setelah 24 jam lalu kode yang sama membuka sesi baru), ekspor lewat endpoint, penghitung (di dalam proses dan lewat CLI), dan restart server dari log. Hasil sesuai harapan: hanya G1 (hari 1 dan 3) dan G5 (23.50 WIB dan 00.10 WIB) yang aktif; G2 (rematch hari yang sama), G3 (2 pemain), dan G4 (jendela terlewat) tidak.
+- Build Docker tidak bisa diuji (daemon Docker tidak berjalan di sandbox). Tahap runtime image ditiru di folder sementara (`pnpm install --frozen-lockfile --prod --filter @gmers/server...`, hanya sumber server dan `dist`) dan server dijalankan dari sana dengan `PORT`, `DATA_DIR`, `HASH_SALT`, `ADMIN_TOKEN`: `/healthz` 200, situs dan rute klien 200, header keamanan ada, ekspor 401 tanpa token dan 200 dengan token, `events.csv` tertulis di `DATA_DIR`.
+
+### Keputusan otomatis (Tahap D)
+1. **Jendela 14 hari bergeser:** dua hari sah mana pun berjarak paling lama 13 hari kalender WIB. Alternatif: jendela tetap sejak game pertama kelompok. Ubah: parameter `--window` atau fungsi `computeReport` di `scripts/lib/metrics.ts`.
+2. **Hari sebuah game = hari WIB saat `game_finished`** (bukan `game_started`), sehingga game yang melewati tengah malam dihitung di hari selesainya.
+3. **Peserta game ada di kolom `detail`** (hash perangkat 16 hex), karena `game_finished` tidak punya `device_id` tunggal. Ini bukan data pribadi, tetapi lebih dari "hanya hitungan" yang diminta untuk chat; chat tetap hanya hitungan.
+4. **`invite_link_opened` dikirim klien lewat WebSocket (`open_link`), bukan lewat HTTP GET**, supaya pratinjau tautan WhatsApp dan perayap tidak dihitung sebagai orang yang membuka tautan. Konsekuensi: orang yang membuka tautan tetapi JavaScript-nya gagal jalan tidak tercatat.
+5. **Token admin lewat header atau `?token=`.** Query string praktis untuk pengguna non-teknis tetapi tersimpan di riwayat peramban; DEPLOY.md menyarankan header. Tanpa `ADMIN_TOKEN` ekspor mati (503), tidak ada nilai bawaan.
+6. **Server dijalankan lewat `tsx` (TypeScript tanpa langkah build)** di dalam kontainer: lebih sederhana, sedikit lebih lambat start. Ubah: bundel server dengan esbuild dan jalankan `node`.
+7. **Retensi 90 hari hanya tertulis di draf privasi; belum ada penghapusan otomatis** (DEPLOY.md bagian 7 menjelaskan penghapusan manual). Kontak permintaan hapus data = "lewat orang yang mengajakmu bermain" sampai Anda menetapkan kanal resmi.
+8. **Satu token perangkat = satu orang.** Dua HP atau data peramban yang dihapus dihitung sebagai dua orang.
+
+### Pertanyaan terbuka tersisa
+Pilihan [USUL] aturan Gaple (arah putar, pembuka 2-3 pemain, pemecah seri, rematch, lewat otomatis, penonton), kanal kontak privasi, dan wawancara ITB. Lihat `docs/LAPORAN-MVP.md` bagian 4 dan 5.
+
+## Keputusan otomatis: ringkasan untuk ditinjau
+Total 20 keputusan, semuanya bisa diubah tanpa membongkar arsitektur:
+- Tahap B (5): "Keputusan yang saya ambil (default)" di bagian Tahap B di atas.
+- Tahap C (7): "Keputusan otomatis (Tahap C)".
+- Tahap D (8): "Keputusan otomatis (Tahap D)".

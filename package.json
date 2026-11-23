@@ -14,11 +14,13 @@
     "test": "pnpm -r --if-present test",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm e2e",
     "build": "pnpm --filter @gmers/web build",
-    "e2e": "pnpm --filter @gmers/web e2e"
+    "e2e": "pnpm --filter @gmers/web e2e",
+    "hitung": "tsx scripts/hitung-kelompok-aktif.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "eslint": "^9.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0"
   }
