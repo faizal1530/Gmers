@@ -40,7 +40,7 @@ async function seatPlayers(port: number, n: number): Promise<{ players: Client[]
   players.push(host);
   for (let i = 1; i < n; i++) {
     const c = await connect(port);
-    c.send({ type: "join", roomId, name: `P${i}`, token: tok(i) });
+    c.send({ type: "join", groupId: roomId, name: `P${i}`, token: tok(i) });
     await c.waitState((s) => s.you.seat === i);
     players.push(c);
   }
@@ -139,7 +139,7 @@ describe("putus dan sambung ulang lewat WebSocket", () => {
     await players[0]!.waitState((s) => s.room.seats[1]?.connected === false);
 
     const back = await connect(server.port);
-    back.send({ type: "join", roomId, name: "x", token: tok(1) });
+    back.send({ type: "join", groupId: roomId, name: "xx", token: tok(1) });
     const s = await back.waitState((st) => st.you.seat === 1);
     expect(s.game!.yourHand).toEqual(vs.game!.yourHand);
     expect(s.game!.board).toEqual(vs.game!.board);
@@ -151,7 +151,7 @@ describe("putus dan sambung ulang lewat WebSocket", () => {
     const server = await boot({ heartbeatIntervalMs: 80 });
     const { players, roomId } = await seatPlayers(server.port, 2);
     const zombie = await connect(server.port, { autoPong: false });
-    zombie.send({ type: "join", roomId, name: "Z", token: tok(5) });
+    zombie.send({ type: "join", groupId: roomId, name: "Zed", token: tok(5) });
     await zombie.waitState((s) => s.you.seat === 2);
     await players[0]!.waitState((s) => s.room.seats[2]?.connected === true);
     await zombie.waitFor(() => zombie.closed, 3000);
@@ -187,7 +187,7 @@ describe("restart server di tengah game (log berkas nyata)", () => {
     const again: Client[] = [];
     for (let i = 0; i < 3; i++) {
       const c = await connect(s2.port);
-      c.send({ type: "join", roomId, name: "x", token: tok(i) });
+      c.send({ type: "join", groupId: roomId, name: "xx", token: tok(i) });
       const st = await c.waitState((s) => s.you.seat === i);
       expect(st.game!.yourHand).toEqual(hands[i]);
       expect(st.game!.moveCount).toBe(6);
@@ -202,8 +202,8 @@ describe("restart server di tengah game (log berkas nyata)", () => {
 
     const csv = readFileSync(join(dir, "events.csv"), "utf8").trim().split("\n");
     expect(csv[0]).toBe(CSV_HEADER);
-    const names = csv.slice(1).map((l) => l.split(",")[4]);
-    expect(names).toContain("room_created");
+    const names = csv.slice(1).map((l) => l.split(",")[5]);
+    expect(names).toContain("group_created");
     expect(names).toContain("game_started");
     expect(names.filter((n) => n === "reconnected")).toHaveLength(3);
     expect(names).toContain("game_finished");

@@ -4,7 +4,8 @@ import type { GapleConfig, Move } from "@gmers/game-engine";
 
 /** Log hanya-tambah. Isi chat tidak pernah ditulis. */
 export type LogRecord =
-  | { t: "room"; roomId: string; ts: number }
+  | { t: "group"; groupId: string; ts: number }
+  | { t: "room"; roomId: string; groupId: string; ts: number }
   | { t: "sit"; roomId: string; ts: number; seat: number; tokenHash: string; name: string }
   | { t: "stand"; roomId: string; ts: number; seat: number }
   | { t: "start"; roomId: string; ts: number; gameNo: number; seed: string; config: GapleConfig; roomSeats: number[] }

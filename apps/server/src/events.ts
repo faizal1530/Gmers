@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "
 import { dirname } from "node:path";
 
 export type EventName =
-  | "room_created"
+  | "group_created"
   | "player_joined"
   | "player_left"
   | "reconnected"
@@ -15,6 +15,9 @@ export type EventName =
 export interface GameEvent {
   /** Epoch ms. */
   ts: number;
+  /** Kode kelompok pada tautan; tidak pernah kedaluwarsa. */
+  groupId: string;
+  /** Sesi room saat ini (satu kelompok bisa punya banyak sesi lintas hari); kosong bila tidak ada. */
   roomId: string;
   /** Hash token perangkat (bukan token asli); string kosong bila tidak ada. */
   deviceId: string;
@@ -39,7 +42,7 @@ export class MemoryEventSink implements EventSink {
   }
 }
 
-export const CSV_HEADER = "ts_utc,ts_wib,room_id,device_id,event,game_no,detail";
+export const CSV_HEADER = "ts_utc,ts_wib,group_id,room_id,device_id,event,game_no,detail";
 
 /** Waktu WIB (UTC+7) ber-offset eksplisit, mis. 2026-11-23T22:15:00.000+07:00. */
 export function formatWib(ts: number): string {
@@ -54,6 +57,7 @@ export function eventToCsvLine(e: GameEvent): string {
   return [
     new Date(e.ts).toISOString(),
     formatWib(e.ts),
+    e.groupId,
     e.roomId,
     e.deviceId,
     e.event,

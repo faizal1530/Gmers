@@ -31,7 +31,7 @@ describe(`beban sederhana: ${ROOMS} room bersamaan`, () => {
         const c = await Client.connect(server.port);
         all.push(c);
         clients.push(c);
-        c.send({ type: "join", roomId, name: `P${r}-${i}`, token: tok(`${r}-${i}`) });
+        c.send({ type: "join", groupId: roomId, name: `P${r}-${i}`, token: tok(`${r}-${i}`) });
         await c.waitState((s) => s.you.seat === i);
       }
       const rng = createRng(`beban-bot-${r}`);

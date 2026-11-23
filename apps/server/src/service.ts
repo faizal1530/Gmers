@@ -31,6 +31,8 @@ interface Member {
   tokenHash: string;
   name: string;
   conn: Conn | null;
+  /** Waktu pesan chat terakhir (untuk pembatas laju). */
+  chatTimes: number[];
 }
 
 interface ActiveGame {
@@ -41,8 +43,17 @@ interface ActiveGame {
   cancelTimer: (() => void) | null;
 }
 
-export interface Room {
+/** Kelompok = kode pada tautan. Tidak pernah kedaluwarsa; sesi room di bawahnya boleh dibersihkan dan dibuat ulang. */
+interface Group {
   id: string;
+  createdAt: number;
+  liveRoomId: string | null;
+}
+
+export interface Room {
+  /** Id sesi. Sesi pertama memakai kode kelompok; sesi berikutnya `${kode}-${waktu}`. */
+  id: string;
+  groupId: string;
   lastActivity: number;
   hostSeat: number;
   seats: (Member | null)[];
@@ -56,7 +67,8 @@ export interface ServiceDeps {
   clock?: Clock;
   log?: RoomLog;
   events?: EventSink;
-  newRoomId?: () => string;
+  /** Pembangkit kode kelompok. */
+  newGroupId?: () => string;
   newSeed?: () => string;
 }
 
@@ -78,10 +90,11 @@ function err(code: string, message: string): ProtocolError {
 
 export class RoomService {
   readonly rooms = new Map<string, Room>();
+  readonly groups = new Map<string, Group>();
   private readonly clock: Clock;
   private readonly log: RoomLog;
   private readonly events: EventSink;
-  private readonly newRoomId: () => string;
+  private readonly newGroupId: () => string;
   private readonly newSeed: () => string;
   private cancelSweep: (() => void) | null = null;
   private stopped = false;
@@ -93,7 +106,7 @@ export class RoomService {
     this.clock = deps.clock ?? realClock;
     this.log = deps.log ?? new MemoryRoomLog();
     this.events = deps.events ?? new NoopEventSink();
-    this.newRoomId = deps.newRoomId ?? defaultRoomId;
+    this.newGroupId = deps.newGroupId ?? defaultRoomId;
     this.newSeed = deps.newSeed ?? (() => randomBytes(12).toString("hex"));
   }
 
@@ -129,6 +142,8 @@ export class RoomService {
         room.game?.cancelTimer?.();
         this.log.append({ t: "closed", roomId: room.id, ts: now });
         this.rooms.delete(room.id);
+        const group = this.groups.get(room.groupId);
+        if (group?.liveRoomId === room.id) group.liveRoomId = null;
         closed.push(room.id);
       }
     }
@@ -138,22 +153,30 @@ export class RoomService {
 
   private compactLog(): void {
     const live = new Set(this.rooms.keys());
-    this.log.rewrite(this.log.readAll().filter((r) => live.has(r.roomId)));
+    // Catatan kelompok selalu dipertahankan; sesi yang sudah ditutup dibuang.
+    this.log.rewrite(this.log.readAll().filter((r) => r.t === "group" || live.has(r.roomId)));
   }
 
   private restore(): void {
     const records = this.log.readAll();
-    const closed = new Set(records.filter((r) => r.t === "closed").map((r) => r.roomId));
+    const closed = new Set(records.flatMap((r) => (r.t === "closed" ? [r.roomId] : [])));
     for (const rec of records) {
+      if (rec.t === "group") {
+        this.groups.set(rec.groupId, { id: rec.groupId, createdAt: rec.ts, liveRoomId: null });
+        continue;
+      }
       if (closed.has(rec.roomId)) continue;
       switch (rec.t) {
-        case "room":
-          this.rooms.set(rec.roomId, this.blankRoom(rec.roomId, rec.ts));
+        case "room": {
+          this.rooms.set(rec.roomId, this.blankRoom(rec.roomId, rec.groupId, rec.ts));
+          const group = this.groups.get(rec.groupId);
+          if (group) group.liveRoomId = rec.roomId;
           break;
+        }
         case "sit": {
           const room = this.rooms.get(rec.roomId);
           if (!room) break;
-          this.seatMember(room, rec.seat, { seat: rec.seat, tokenHash: rec.tokenHash, name: rec.name, conn: null });
+          this.seatMember(room, rec.seat, { seat: rec.seat, tokenHash: rec.tokenHash, name: rec.name, conn: null, chatTimes: [] });
           room.lastActivity = rec.ts;
           break;
         }
@@ -196,9 +219,10 @@ export class RoomService {
 
   // ---------- pembantu room ----------
 
-  private blankRoom(id: string, ts: number): Room {
+  private blankRoom(id: string, groupId: string, ts: number): Room {
     return {
       id,
+      groupId,
       lastActivity: ts,
       hostSeat: 0,
       seats: Array.from({ length: this.cfg.maxSeats }, () => null),
@@ -235,6 +259,7 @@ export class RoomService {
   private emit(room: Room, event: EventName, tokenHash: string | null, detail = ""): void {
     this.events.emit({
       ts: this.clock.now(),
+      groupId: room.groupId,
       roomId: room.id,
       deviceId: tokenHash ? tokenHash.slice(0, 16) : "",
       event,
@@ -291,6 +316,7 @@ export class RoomService {
       now: this.clock.now(),
       room: {
         id: room.id,
+        groupId: room.groupId,
         phase: room.phase,
         gameNo: room.gameNo,
         hostSeat: room.hostSeat,
@@ -376,9 +402,11 @@ export class RoomService {
         conn.send({ type: "pong", now: this.clock.now() });
         return;
       case "create_room":
-        return this.createRoom(conn, msg.name, msg.token);
+        return this.createGroup(conn, msg.name, msg.token);
+      case "open_link":
+        return this.openLink(conn, msg.groupId, msg.token);
       case "join":
-        return this.join(conn, msg.roomId, msg.name, msg.token, msg.seat);
+        return this.join(conn, msg.groupId, msg.name, msg.token, msg.seat);
     }
     const ctx = this.contextOf(conn);
     if (!ctx) {
@@ -395,7 +423,7 @@ export class RoomService {
       case "leave":
         return this.leave(conn, room, member);
       case "chat":
-        return this.chat(room, member, msg.text);
+        return this.chat(conn, room, member, msg.text);
       case "play":
         return this.playerMove(conn, room, member, { type: "play", seat: -1, card: canonical(msg.card), end: msg.end });
       case "pass":
@@ -433,30 +461,76 @@ export class RoomService {
     conn.session = { roomId: room.id, tokenHash: member.tokenHash };
   }
 
-  private createRoom(conn: Conn, name: string, token: string): void {
+  private createGroup(conn: Conn, name: string, token: string): void {
     if (this.rooms.size >= this.cfg.maxRooms) {
       conn.send(err("SERVER_BUSY", "Server sedang penuh. Coba lagi nanti."));
       return;
     }
     this.detach(conn);
-    let id = this.newRoomId();
-    while (this.rooms.has(id)) id = this.newRoomId();
+    let id = this.newGroupId();
+    while (this.groups.has(id)) id = this.newGroupId();
     const now = this.clock.now();
-    const room = this.blankRoom(id, now);
-    this.rooms.set(id, room);
+    this.groups.set(id, { id, createdAt: now, liveRoomId: null });
+    this.append({ t: "group", groupId: id, ts: now });
+    const room = this.newSession(this.groups.get(id) as Group, true);
     const tokenHash = hashToken(token, this.cfg.hashSalt);
-    this.append({ t: "room", roomId: id, ts: now });
-    this.emit(room, "room_created", tokenHash);
+    this.emit(room, "group_created", tokenHash);
     this.sit(room, tokenHash, name, 0, conn);
   }
 
-  private join(conn: Conn, roomId: string, name: string, token: string, wantSeat: number | undefined): void {
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      conn.send(err("ROOM_NOT_FOUND", "Room tidak ditemukan atau sudah kedaluwarsa."));
+  /** Buat sesi room baru untuk kelompok yang belum punya sesi hidup. */
+  private newSession(group: Group, first = false): Room {
+    const now = this.clock.now();
+    let id = first ? group.id : `${group.id}-${now.toString(36)}`;
+    while (this.rooms.has(id)) id += "x";
+    const room = this.blankRoom(id, group.id, now);
+    this.rooms.set(id, room);
+    group.liveRoomId = id;
+    this.append({ t: "room", roomId: id, groupId: group.id, ts: now });
+    return room;
+  }
+
+  private liveRoom(group: Group): Room | null {
+    return group.liveRoomId ? (this.rooms.get(group.liveRoomId) ?? null) : null;
+  }
+
+  /** Klien membuka tautan: catat peristiwa dan beri ringkasan kelompok (tanpa membuat sesi). */
+  private openLink(conn: Conn, groupId: string, token: string): void {
+    const group = this.groups.get(groupId);
+    if (!group) {
+      conn.send(err("ROOM_NOT_FOUND", "Tautan ini tidak dikenal. Minta tautan baru dari temanmu."));
       return;
     }
-    if (conn.session && (conn.session.roomId !== roomId)) this.detach(conn);
+    const tokenHash = hashToken(token, this.cfg.hashSalt);
+    const room = this.liveRoom(group);
+    this.events.emit({
+      ts: this.clock.now(),
+      groupId,
+      roomId: room?.id ?? "",
+      deviceId: tokenHash.slice(0, 16),
+      event: "invite_link_opened",
+      gameNo: room && room.gameNo > 0 ? room.gameNo : null,
+      detail: "",
+    });
+    conn.send({
+      type: "group_info",
+      groupId,
+      phase: room ? room.phase : "none",
+      players: room ? room.seats.filter(Boolean).length : 0,
+      maxSeats: this.cfg.maxSeats,
+      isMember: room ? room.seats.some((m) => m?.tokenHash === tokenHash) : false,
+    });
+  }
+
+  private join(conn: Conn, groupId: string, name: string, token: string, wantSeat: number | undefined): void {
+    const group = this.groups.get(groupId);
+    if (!group) {
+      conn.send(err("ROOM_NOT_FOUND", "Tautan ini tidak dikenal. Minta tautan baru dari temanmu."));
+      return;
+    }
+    // Sesi lama sudah dibersihkan: kelompok yang sama mendapat sesi room baru, bukan galat.
+    const room = this.liveRoom(group) ?? this.newSession(group);
+    if (conn.session && conn.session.roomId !== room.id) this.detach(conn);
     const tokenHash = hashToken(token, this.cfg.hashSalt);
     this.touch(room);
     const existing = room.seats.find((m) => m?.tokenHash === tokenHash);
@@ -486,7 +560,7 @@ export class RoomService {
   }
 
   private sit(room: Room, tokenHash: string, name: string, seat: number, conn: Conn): void {
-    const member: Member = { seat, tokenHash, name, conn: null };
+    const member: Member = { seat, tokenHash, name, conn: null, chatTimes: [] };
     this.seatMember(room, seat, member);
     this.append({ t: "sit", roomId: room.id, ts: this.clock.now(), seat, tokenHash, name });
     this.bind(conn, room, member);
@@ -550,7 +624,14 @@ export class RoomService {
     this.broadcast(room);
   }
 
-  private chat(room: Room, member: Member, text: string): void {
+  private chat(conn: Conn, room: Room, member: Member, text: string): void {
+    const now = this.clock.now();
+    member.chatTimes = member.chatTimes.filter((t) => now - t < this.cfg.chatWindowMs);
+    if (member.chatTimes.length >= this.cfg.chatBurst) {
+      conn.send(err("RATE_LIMITED", "Terlalu cepat. Tunggu sebentar sebelum mengirim lagi."));
+      return;
+    }
+    member.chatTimes.push(now);
     this.emit(room, "message_sent", member.tokenHash);
     const msg: ServerMessage = { type: "chat", seat: member.seat, name: member.name, text, ts: this.clock.now() };
     for (const m of room.seats) m?.conn?.send(msg);

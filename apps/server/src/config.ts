@@ -15,8 +15,12 @@ export interface ServerConfig {
   /** Selang ping WebSocket; koneksi yang tidak membalas pong sebelum ping berikutnya diputus. */
   heartbeatIntervalMs: number;
   maxRooms: number;
+  nameMinLength: number;
   nameMaxLength: number;
   chatMaxLength: number;
+  /** Pembatas laju chat per pemain: paling banyak chatBurst pesan per chatWindowMs. */
+  chatBurst: number;
+  chatWindowMs: number;
   maxMessageBytes: number;
   dataDir: string;
   roomLogFile: string;
@@ -38,8 +42,11 @@ export const defaultServerConfig: ServerConfig = {
   cleanupIntervalMs: 10 * 60 * 1000,
   heartbeatIntervalMs: 25_000,
   maxRooms: 5000,
-  nameMaxLength: 20,
+  nameMinLength: 2,
+  nameMaxLength: 16,
   chatMaxLength: 300,
+  chatBurst: 5,
+  chatWindowMs: 10_000,
   maxMessageBytes: 4096,
   dataDir: "data",
   roomLogFile: "rooms.jsonl",

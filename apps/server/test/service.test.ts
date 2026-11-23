@@ -21,7 +21,7 @@ function harness(overrides: Partial<ServerConfig> = {}, seeds?: () => string): H
   const events = new MemoryEventSink();
   const cfg = testConfig(overrides);
   let n = 0;
-  const svc = new RoomService(cfg, { clock, log, events, newRoomId: () => `ROOM${n++}`.padEnd(6, "X"), newSeed: seeds ?? (() => "seed-tetap") });
+  const svc = new RoomService(cfg, { clock, log, events, newGroupId: () => `ROOM${n++}`.padEnd(6, "X"), newSeed: seeds ?? (() => "seed-tetap") });
   svc.start();
   return { svc, clock, log, events, cfg };
 }
@@ -33,7 +33,7 @@ function table(h: Harness, n: number, start = true): { conns: FakeConn[]; roomId
   const conns = Array.from({ length: n }, () => new FakeConn());
   send(h, conns[0] as FakeConn, { type: "create_room", name: "P0", token: tok(0) });
   const roomId = (conns[0] as FakeConn).state().room.id;
-  for (let i = 1; i < n; i++) send(h, conns[i] as FakeConn, { type: "join", roomId, name: `P${i}`, token: tok(i) });
+  for (let i = 1; i < n; i++) send(h, conns[i] as FakeConn, { type: "join", groupId: roomId, name: `P${i}`, token: tok(i) });
   if (start) send(h, conns[0] as FakeConn, { type: "start" });
   return { conns, roomId };
 }
@@ -62,15 +62,15 @@ describe("lobi dan memulai", () => {
     expect(solo.conns[0]!.lastError()?.code).toBe("NEED_MORE_PLAYERS");
     const { conns, roomId } = table(h, 4, false);
     const late = new FakeConn();
-    send(h, late, { type: "join", roomId, name: "Telat", token: tok(9) });
+    send(h, late, { type: "join", groupId: roomId, name: "Telat", token: tok(9) });
     expect(late.lastError()?.code).toBe("ROOM_FULL");
     const h2 = harness();
     const t = table(h2, 2, false);
     const x = new FakeConn();
-    send(h2, x, { type: "join", roomId: t.roomId, name: "X", token: tok(5), seat: 1 });
+    send(h2, x, { type: "join", groupId: t.roomId, name: "XX", token: tok(5), seat: 1 });
     expect(x.lastError()?.code).toBe("SEAT_TAKEN");
     send(h2, t.conns[0]!, { type: "start" });
-    send(h2, x, { type: "join", roomId: t.roomId, name: "X", token: tok(5) });
+    send(h2, x, { type: "join", groupId: t.roomId, name: "XX", token: tok(5) });
     expect(x.lastError()?.code).toBe("GAME_IN_PROGRESS");
     void conns;
   });
@@ -78,8 +78,8 @@ describe("lobi dan memulai", () => {
   it("room tidak dikenal dan pesan sebelum masuk dijawab dengan kesalahan berbahasa Indonesia", () => {
     const h = harness();
     const c = new FakeConn();
-    send(h, c, { type: "join", roomId: "ZZZZZZ", name: "A", token: tok(1) });
-    expect(c.lastError()).toEqual({ code: "ROOM_NOT_FOUND", message: "Room tidak ditemukan atau sudah kedaluwarsa." });
+    send(h, c, { type: "join", groupId: "ZZZZZZ", name: "Ana", token: tok(1) });
+    expect(c.lastError()).toEqual({ code: "ROOM_NOT_FOUND", message: "Tautan ini tidak dikenal. Minta tautan baru dari temanmu." });
     send(h, c, { type: "pass" });
     expect(c.lastError()?.code).toBe("NOT_IN_ROOM");
   });
@@ -287,7 +287,7 @@ describe("sambung ulang", () => {
     expect(observer.state().room.seats[target]!.connected).toBe(false);
 
     const back = new FakeConn();
-    send(h, back, { type: "join", roomId, name: "Nama Baru Diabaikan", token: tok(target) });
+    send(h, back, { type: "join", groupId: roomId, name: "Nama Baru Diabaikan", token: tok(target) });
     const s = back.state();
     expect(s.you.seat).toBe(target);
     expect(s.game!.yourHand).toEqual(handBefore);
@@ -301,7 +301,7 @@ describe("sambung ulang", () => {
     const h = harness();
     const { conns, roomId } = table(h, 2);
     const dup = new FakeConn();
-    send(h, dup, { type: "join", roomId, name: "P1", token: tok(1) });
+    send(h, dup, { type: "join", groupId: roomId, name: "P1", token: tok(1) });
     expect(conns[1]!.closedWith).toBe(4001);
     expect(conns[1]!.lastError()?.code).toBe("REPLACED");
     expect(dup.state().you.seat).toBe(1);
@@ -315,7 +315,7 @@ describe("sambung ulang", () => {
     const { conns, roomId } = table(h, 2);
     h.svc.onDisconnect(conns[1]!);
     const thief = new FakeConn();
-    send(h, thief, { type: "join", roomId, name: "Maling", token: tok(77) });
+    send(h, thief, { type: "join", groupId: roomId, name: "Maling", token: tok(77) });
     expect(thief.lastError()?.code).toBe("GAME_IN_PROGRESS");
   });
 });
@@ -350,7 +350,7 @@ describe("restart server dengan replay dari log", () => {
 
     // pemain sambung ulang dengan token lama: tampilan sama
     const again = conns.map(() => new FakeConn());
-    again.forEach((c, i) => svc2.handle(c, { type: "join", roomId, name: "x", token: tok(i) }));
+    again.forEach((c, i) => svc2.handle(c, { type: "join", groupId: roomId, name: "xx", token: tok(i) }));
     again.forEach((c, i) => expect(JSON.stringify({ ...c.state().game, turnDeadline: 0 })).toBe(beforeViews[i]));
 
     // timer menyala setelah restart, lalu game bisa diteruskan sampai selesai
@@ -373,7 +373,7 @@ describe("restart server dengan replay dari log", () => {
     expect(r2.lastWinnerSeat).toBe(winnerSeat);
     expect(r2.game!.state.result).toEqual(room(h, roomId).game!.state.result);
     const c = new FakeConn();
-    svc2.handle(c, { type: "join", roomId, name: "x", token: tok(0) });
+    svc2.handle(c, { type: "join", groupId: roomId, name: "xx", token: tok(0) });
     svc2.handle(c, { type: "rematch" });
     expect(r2.phase).toBe("playing");
     expect(r2.gameNo).toBe(2);
@@ -386,7 +386,7 @@ describe("restart server dengan replay dari log", () => {
     const text = JSON.stringify(h.log.readAll());
     expect(text).not.toContain("rahasia-banget-123");
     expect(text).not.toContain(tok(0)); // token mentah tidak pernah ditulis, hanya hash
-    expect(h.log.readAll().map((r) => r.t)).toEqual(["room", "sit", "sit", "start"]);
+    expect(h.log.readAll().map((r) => r.t)).toEqual(["group", "room", "sit", "sit", "start"]);
   });
 });
 
@@ -437,7 +437,7 @@ describe("chat dan peristiwa", () => {
     expect(dump).not.toContain("halo semua");
     expect(dump).not.toContain("P0");
     expect(dump).not.toContain(tok(0));
-    expect(events.map((e) => e.event)).toEqual(["room_created", "player_joined", "player_joined", "game_started", "message_sent"]);
+    expect(events.map((e) => e.event)).toEqual(["group_created", "player_joined", "player_joined", "game_started", "message_sent"]);
     expect(events.every((e) => e.deviceId === "" || /^[0-9a-f]{16}$/.test(e.deviceId))).toBe(true);
   });
 
@@ -466,10 +466,17 @@ describe("pembersihan room tak aktif", () => {
     expect(h.svc.rooms.has(a.roomId)).toBe(false);
     // room b masih punya pemain terhubung: tidak dihapus
     expect(h.svc.rooms.has(b.roomId)).toBe(true);
-    expect(h.log.readAll().every((r) => r.roomId === b.roomId)).toBe(true);
-    const gone = new FakeConn();
-    send(h, gone, { type: "join", roomId: a.roomId, name: "x", token: tok(0) });
-    expect(gone.lastError()?.code).toBe("ROOM_NOT_FOUND");
+    expect(h.log.readAll().every((r) => r.t === "group" || r.roomId === b.roomId)).toBe(true);
+    // Kode kelompok tidak pernah kedaluwarsa: membukanya lagi membuat sesi room baru dengan group_id yang sama.
+    const back = new FakeConn();
+    send(h, back, { type: "join", groupId: a.roomId, name: "Kembali", token: tok(0) });
+    const st = back.state();
+    expect(st.room.groupId).toBe(a.roomId);
+    expect(st.room.id).not.toBe(a.roomId);
+    expect(st.room.phase).toBe("lobby");
+    expect(h.svc.rooms.has(st.room.id)).toBe(true);
+    expect(h.events.events.filter((e) => e.groupId === a.roomId).every((e) => e.groupId === a.roomId)).toBe(true);
+    expect(h.events.events.at(-1)).toMatchObject({ event: "player_joined", groupId: a.roomId, roomId: st.room.id });
   });
 
   it("restart tidak memunculkan kembali room yang sudah ditutup", () => {
@@ -492,5 +499,80 @@ describe("kelengkapan", () => {
     const s = conns[0]!.state();
     expect(s.room.seats.map((x) => x?.cardsLeft)).toEqual([7, 7, 7, 7]);
     expect(fullDeck()).toHaveLength(28);
+  });
+});
+
+describe("kelompok yang menetap (group_id)", () => {
+  it("kode tautan tidak kedaluwarsa: setelah sesi dibersihkan, kode yang sama membuka sesi baru dan semua peristiwa membawa group_id", () => {
+    const h = harness({ roomIdleTtlMs: 24 * 3600_000, cleanupIntervalMs: 600_000 });
+    const { conns, roomId: groupId } = table(h, 3, false);
+    conns.forEach((c) => h.svc.onDisconnect(c));
+    h.clock.advance(25 * 3600_000);
+    expect(h.svc.rooms.size).toBe(0);
+    expect(h.svc.groups.has(groupId)).toBe(true);
+
+    const c1 = new FakeConn();
+    const c2 = new FakeConn();
+    send(h, c1, { type: "join", groupId, name: "Andi", token: tok(0) });
+    send(h, c2, { type: "join", groupId, name: "Budi", token: tok(1) });
+    expect(c1.state().room.groupId).toBe(groupId);
+    expect(c2.state().room.id).toBe(c1.state().room.id);
+    expect(c1.state().room.seats.map((s) => s?.name ?? null)).toEqual(["Andi", "Budi", null, null]);
+    send(h, c1, { type: "start" });
+    expect(c1.state().room.phase).toBe("playing");
+    expect(h.events.events.every((e) => e.groupId === groupId)).toBe(true);
+    const ids = new Set(h.events.events.map((e) => e.roomId));
+    expect(ids.size).toBe(2); // sesi hari pertama dan sesi baru
+  });
+
+  it("kelompok bertahan setelah restart dan setelah pemadatan log; kode tak dikenal ditolak", () => {
+    const h = harness({ roomIdleTtlMs: 1000, cleanupIntervalMs: 500 });
+    const { conns, roomId: groupId } = table(h, 2, false);
+    conns.forEach((c) => h.svc.onDisconnect(c));
+    h.clock.advance(2000);
+    expect(h.svc.rooms.size).toBe(0);
+    const svc2 = new RoomService(h.cfg, { clock: h.clock, log: h.log, events: h.events });
+    svc2.start();
+    expect(svc2.groups.has(groupId)).toBe(true);
+    expect(svc2.rooms.size).toBe(0);
+    const c = new FakeConn();
+    svc2.handle(c, { type: "join", groupId, name: "Citra", token: tok(3) });
+    expect(c.state().room.groupId).toBe(groupId);
+    const d = new FakeConn();
+    svc2.handle(d, { type: "join", groupId: "TIDAKADA", name: "Dedi", token: tok(4) });
+    expect(d.lastError()?.code).toBe("ROOM_NOT_FOUND");
+  });
+
+  it("open_link mencatat invite_link_opened dengan group_id dan memberi ringkasan tanpa membuat sesi", () => {
+    const h = harness();
+    const { roomId: groupId } = table(h, 2, false);
+    const c = new FakeConn();
+    send(h, c, { type: "open_link", groupId, token: tok(40) });
+    expect(c.msgs.at(-1)).toEqual({ type: "group_info", groupId, phase: "lobby", players: 2, maxSeats: 4, isMember: false });
+    const ev = h.events.events.at(-1)!;
+    expect(ev).toMatchObject({ event: "invite_link_opened", groupId });
+    expect(ev.deviceId).toMatch(/^[0-9a-f]{16}$/);
+    const member = new FakeConn();
+    send(h, member, { type: "open_link", groupId, token: tok(1) });
+    expect(member.msgs.at(-1)).toMatchObject({ isMember: true });
+    const unknown = new FakeConn();
+    send(h, unknown, { type: "open_link", groupId: "NOPENO", token: tok(1) });
+    expect(unknown.lastError()?.code).toBe("ROOM_NOT_FOUND");
+    expect(h.svc.rooms.size).toBe(1);
+  });
+});
+
+describe("pembatas laju chat", () => {
+  it("lebih dari chatBurst pesan dalam jendela waktu ditolak; pulih setelah jendela lewat", () => {
+    const h = harness({ chatBurst: 3, chatWindowMs: 10_000 });
+    const { conns } = table(h, 2);
+    for (let i = 0; i < 3; i++) send(h, conns[0]!, { type: "chat", text: `pesan ${i}` });
+    send(h, conns[0]!, { type: "chat", text: "keempat" });
+    expect(conns[0]!.lastError()?.code).toBe("RATE_LIMITED");
+    expect(conns[1]!.msgs.filter((m) => m.type === "chat")).toHaveLength(3);
+    expect(h.events.events.filter((e) => e.event === "message_sent")).toHaveLength(3);
+    h.clock.advance(10_000);
+    send(h, conns[0]!, { type: "chat", text: "lagi" });
+    expect(conns[1]!.msgs.filter((m) => m.type === "chat")).toHaveLength(4);
   });
 });

@@ -3,7 +3,7 @@ import type { Card, EndSide } from "@gmers/game-engine";
 import type { ServerConfig } from "./config";
 
 /** Pesan klien -> server. Klien hanya mengirim niat; server memutuskan. */
-export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMaxLength" | "chatMaxLength">) {
+export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMinLength" | "nameMaxLength" | "chatMaxLength">) {
   // Sengaja menolak karakter kontrol di nama dan chat.
   // eslint-disable-next-line no-control-regex
   const noControl = /^[^\u0000-\u001F\u007F]*$/;
@@ -11,15 +11,16 @@ export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMaxLength" 
   const name = z
     .string()
     .transform((s) => s.trim().replace(/\s+/g, " "))
-    .pipe(z.string().min(1).max(cfg.nameMaxLength).regex(noControl));
-  const roomId = z
+    .pipe(z.string().min(cfg.nameMinLength).max(cfg.nameMaxLength).regex(noControl));
+  const groupId = z
     .string()
     .transform((s) => s.trim().toUpperCase())
     .pipe(z.string().regex(/^[A-Z0-9]{4,10}$/));
   const pip = z.number().int().min(0).max(6);
   return z.discriminatedUnion("type", [
     z.object({ type: z.literal("create_room"), name, token }).strict(),
-    z.object({ type: z.literal("join"), roomId, name, token, seat: z.number().int().min(0).max(3).optional() }).strict(),
+    z.object({ type: z.literal("open_link"), groupId, token }).strict(),
+    z.object({ type: z.literal("join"), groupId, name, token, seat: z.number().int().min(0).max(3).optional() }).strict(),
     z.object({ type: z.literal("start") }).strict(),
     z.object({ type: z.literal("play"), card: z.tuple([pip, pip]), end: z.enum(["left", "right"]) }).strict(),
     z.object({ type: z.literal("pass") }).strict(),
@@ -72,7 +73,10 @@ export interface StateMessage {
   type: "state";
   now: number;
   room: {
+    /** Id sesi room (berubah tiap sesi baru). */
     id: string;
+    /** Kode kelompok pada tautan (tetap). */
+    groupId: string;
     phase: "lobby" | "playing" | "finished";
     gameNo: number;
     hostSeat: number;
@@ -88,4 +92,5 @@ export type ServerMessage =
   | ProtocolError
   | { type: "pong"; now: number }
   | { type: "left" }
+  | { type: "group_info"; groupId: string; phase: "none" | "lobby" | "playing" | "finished"; players: number; maxSeats: number; isMember: boolean }
   | { type: "chat"; seat: number; name: string; text: string; ts: number };
