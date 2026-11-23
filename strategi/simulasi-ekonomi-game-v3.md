@@ -1,0 +1,197 @@
+# Simulasi Ekonomi Game Sosial (v3): salinan teks
+
+Salinan teks dari simulasi-ekonomi-game-v3.xlsx (nilai hasil hitung). File xlsx asli tidak bisa disimpan di Project; formula ada di file xlsx.
+
+
+## Petunjuk
+
+- Simulasi Ekonomi Game Sosial (v3)
+- Trofi, liga, Koin, emoji, voice P2P, iklan, Live, dan turnamen - semua angka adalah asumsi awal untuk diuji
+- CARA PAKAI
+- 1. Ubah angka di sheet Input (sel kuning dengan tulisan biru). Sheet lain terhitung otomatis.
+- 2. Liga: seberapa cepat pemain naik liga dan apakah sistem trofi tidak menghukum.
+- 3. Turnamen: total hadiah dan apakah jumlah kualifikator cukup mengisi slot.
+- 4. Ekonomi: pendapatan (avatar, emoji, iklan rewarded, iklan Live), biaya (server, TURN, hadiah), laba/rugi, titik impas, dan skenario skala.
+- YANG BARU DI V2
+- - Voice P2P: biaya voice kini hanya bandwidth relay TURN (bagian G di Input), bukan biaya per pemain tetap.
+- - Emoji (bagian H) dipisah dari kosmetik avatar. Pembeli keduanya dihitung terpisah, jadi mungkin ada tumpang tindih (angka sedikit optimistis).
+- - Live (bagian I): pendapatan iklan dari penonton dan biaya server kecil per menit tonton. Semua angka Live belum terbukti: ukur dulu.
+- LEGENDA WARNA
+- Biru di atas kuning = input yang boleh diubah. Hitam = rumus. Hijau = tautan langsung ke sheet lain.
+- Contoh pengisian: nilai bawaan di sheet Input adalah contoh realistis (1.000 pemain aktif, win rate 50%, dst).
+- CATATAN PENTING
+- - Semua angka bawaan adalah tebakan awal, bukan fakta pasar. Ganti dengan data dari uji 50-100 pemain.
+- - Model memakai pemain rata-rata di mode 1 vs 1 Ranked. Perisai kekalahan, lantai liga, reset musim, dan Bintang tidak dimodelkan.
+- - Biaya tetap lain belum termasuk gaji tim dan sewa server TURN dasar (masukkan ke biaya tetap).
+- - Hadiah uang harus dibiayai sponsor atau anggaran promosi. Jangan mengaitkan penjualan Koin dengan hadiah dalam materi pemasaran. Jangan ada tebakan berhadiah di Live. Konsultasikan desain final dengan pengacara. Ini bukan nasihat hukum.
+- - Jika kualifikator melebihi slot, seleksi lewat peringkat atau babak kualifikasi, bukan undian (undian menambah unsur peruntungan).
+- - Blokir kategori iklan judi/taruhan di jaringan iklan (rewarded dan Live).
+- YANG BARU DI V3
+- - Blok game premium (bagian J di Input): game sekali beli, pass satu malam, langganan klub, bagi hasil perancang/penerbit, dan amortisasi biaya pengembangan/lisensi.
+- - Saklar di Input B50: 1 = blok premium aktif (Fase 3), 0 = nonaktif (Fase 1-2).
+- - Game premium jangan menjadi syarat masuk turnamen berhadiah uang (lihat dokumen Project).
+
+## Input
+
+- Input & Asumsi
+- Ubah hanya sel kuning bertulisan biru
+- Parameter | Nilai | Satuan | Catatan / dasar asumsi
+- A. Pemain & perilaku
+- Pemain aktif bulanan (MAU) | 1000 | orang | Titik awal uji. Ubah untuk melihat skala.
+- Game ranked per minggu per pemain ranked | 20 | game/minggu | Asumsi awal; validasi dari uji pemain.
+- Win rate rata-rata pemain | 0.50 | % | Rata-rata semua pemain secara teori 50%.
+- % pemain aktif yang bermain Ranked | 0.40 | % | Sisanya hanya main santai dengan teman.
+- Hari main ranked per minggu (untuk bonus harian) | 4 | hari | Maksimal 7.
+- B. Aturan trofi (1 vs 1)
+- Trofi saat menang | 10 | trofi | Dari desain: +10.
+- Trofi dikurangi saat kalah | 5 | trofi | Dari desain: -5 (isi sebagai angka positif).
+- Bonus game pertama harian | 2 | trofi | Dari desain: +2, menang atau kalah.
+- C. Monetisasi
+- Konversi pemain aktif menjadi pembeli avatar (Koin) | 0.04 | %/bulan | Pembeli avatar dan emoji dihitung terpisah; mungkin ada tumpang tindih, jadi angka sedikit optimistis.
+- Belanja avatar rata-rata per pembeli per bulan | 30000 | Rp | Asumsi awal; paket Rp10.000-Rp50.000.
+- Potongan toko aplikasi + PPN | 0.28 | % | Perkiraan kasar 25-30%; cek tarif aktual dan akuntan. Berlaku untuk avatar dan emoji.
+- Iklan rewarded ditonton per pemain per hari aktif | 2 | tampilan | Dibatasi maks 5/hari dalam desain.
+- Hari aktif per pemain per bulan | 15 | hari | Asumsi awal.
+- eCPM iklan rewarded | 25000 | Rp/1.000 tampilan | Asumsi awal untuk Indonesia; sangat bervariasi, validasi dengan jaringan iklan.
+- D. Biaya
+- Biaya server teks + status game per pemain aktif | 300 | Rp/MAU/bulan | Chat, status game, sinkronisasi. Voice P2P dihitung terpisah (bagian G). Asumsi awal, validasi dengan tagihan hosting.
+- Biaya tetap bulanan lain | 5000000 | Rp/bulan | Hosting dasar, server TURN dasar, moderasi, alat. Belum termasuk gaji.
+- E. Turnamen
+- Jumlah turnamen berhadiah uang per bulan | 1 | turnamen | Dari desain: 1 turnamen bulanan.
+- Slot peserta per turnamen | 64 | slot | Bagan gugur 64.
+- % pemain ranked yang memenuhi syarat tiket | 0.10 | % | Syarat: liga Emas ke atas dan 30+ game ranked/bulan. Validasi dari data.
+- Pendanaan sponsor untuk hadiah per bulan | 0 | Rp/bulan | Isi jika ada sponsor. Bawaan 0 = skenario konservatif.
+- Anggaran turnamen mingguan terbuka (hadiah non-uang/voucher) | 400000 | Rp/bulan | 4 minggu x Rp100.000.
+- F. Konstanta
+- Minggu per bulan | 4.33 | minggu | Rata-rata 52 minggu / 12 bulan.
+- Konversi kbps ke MB per menit | 0.01 | MB/menit per kbps | 60 detik / 8 bit / 1.000 = 0,0075.
+- G. Voice P2P & TURN
+- % pemain aktif yang memakai voice per bulan | 0.25 | % | Banyak pemain akan di mode chat/senyap. Validasi dari data.
+- Menit voice per pengguna voice per bulan | 180 | menit | Asumsi awal (3 jam).
+- Rata-rata peserta per sesi voice | 3 | orang | Maksimal 4 di versi awal. Mesh: tiap orang mengirim (peserta-1) aliran.
+- % sesi voice yang jatuh ke TURN relay | 0.30 | % | Perkiraan kasar (NAT operator seluler). Ukur dari data nyata.
+- Bitrate audio Opus | 32 | kbps | Per aliran suara.
+- Biaya bandwidth TURN | 1500 | Rp/GB | Konservatif (setara tarif cloud). VPS sendiri bisa lebih murah.
+- H. Emoji
+- % pemain aktif yang membeli emoji per bulan | 0.02 | %/bulan | Belum terbukti: uji dengan percobaan gratis 24 jam.
+- Belanja emoji rata-rata per pembeli per bulan | 10000 | Rp | Sekitar 4-5 emoji (Rp2.000-3.000 per emoji).
+- I. Live
+- % pemain aktif yang menonton Live per bulan | 0.15 | % | Belum terbukti. Ukur dulu sebelum mengandalkan.
+- Menit tonton Live per penonton per bulan | 60 | menit | Asumsi awal.
+- Tampilan iklan per menit tonton | 0.30 | tampilan/menit | Iklan di sela pertandingan, bukan di tengah game.
+- eCPM iklan Live | 20000 | Rp/1.000 tampilan | Asumsi awal; validasi dengan jaringan iklan.
+- Biaya server Live per menit tonton | 2 | Rp/menit | Kirim status game, bukan video, jadi sangat kecil.
+- J. Game premium (modern board game)
+- Aktifkan blok game premium (1 = ya, 0 = tidak) | 1 | saklar | Premium baru relevan di Fase 3, setelah komunitas terbentuk.
+- % pemain aktif yang membeli game premium per bulan | 0.01 | %/bulan | Belum terbukti: uji lewat daftar tunggu/pra-pesan.
+- Harga rata-rata game premium (sekali beli) | 50000 | Rp | Asumsi awal. Pemilik room membeli, tamu main gratis.
+- % pemain aktif yang membeli pass satu malam per bulan | 0.01 | %/bulan | Untuk yang hanya ingin mencoba.
+- Harga pass satu malam | 7000 | Rp | Asumsi awal.
+- % pemain aktif yang berlangganan klub | 0.01 | % | Langganan akses seluruh katalog.
+- Harga langganan klub per bulan | 25000 | Rp/bulan | Asumsi awal.
+- Bagi hasil perancang/penerbit (dari penjualan premium setelah potongan toko) | 0.40 | % | Dinegosiasikan; tidak ada patokan tunggal.
+- Amortisasi pengembangan/lisensi katalog premium | 3000000 | Rp/bulan | Placeholder: biaya tiap game (mesin aturan, UI, klasifikasi usia, lisensi) dibagi beberapa bulan.
+
+## Liga
+
+- Trofi & Liga
+- Apakah pemain rata-rata naik pelan tanpa merasa dihukum?
+- Perhitungan dasar | Nilai | Keterangan
+- Trofi rata-rata per game ranked | 2.50 | Win rate x menang - (1 - win rate) x kalah
+- Trofi bonus harian per minggu | 8 | Hari main x bonus harian
+- Trofi bersih per minggu | 58 | Game per minggu x rata-rata per game + bonus
+- Win rate impas (trofi per game = 0) | 0.33 | Di atas angka ini trofi pemain naik terus; makin rendah makin ramah
+- Liga | Trofi minimum | Minggu untuk mencapai | Bulan (perkiraan)
+- Perunggu | 0 | 0 | 0
+- Perak | 100 | 1.72 | 0.40
+- Emas | 300 | 5.17 | 1.19
+- Platinum | 600 | 10.34 | 2.39
+- Legenda | 1000 | 17.24 | 3.98
+- Sensitivitas: pengaruh win rate pemain
+- Win rate pemain | Trofi per game | Trofi per minggu | Minggu ke Emas | Minggu ke Legenda
+- 0.30 | -0.50 | -2 | Tidak naik | Tidak naik
+- 0.40 | 1 | 28 | 10.71 | 35.71
+- 0.50 | 2.50 | 58 | 5.17 | 17.24
+- 0.60 | 4 | 88 | 3.41 | 11.36
+- 0.70 | 5.50 | 118 | 2.54 | 8.47
+- Baca tabel ini: jika pemain dengan win rate rendah masih naik (bukan 'Tidak naik'), sistem tidak menghukum. Bonus harian membantu pemain yang kalah.
+
+## Turnamen
+
+- Turnamen
+- Hadiah dibiayai sponsor/anggaran promosi, bukan dari uang pemain
+- Peringkat | Jumlah penerima | Hadiah per orang | Total
+- 1 | 1 | 600000 | 600000
+- 2 | 1 | 300000 | 300000
+- 3-4 | 2 | 150000 | 300000
+- 5-8 | 4 | 50000 | 200000
+- Total hadiah per turnamen | 8 | 1400000
+- Anggaran hadiah bulanan
+- Hadiah turnamen uang (bulanan) | 1400000
+- Hadiah turnamen mingguan terbuka | 400000
+- Total anggaran hadiah | 1800000
+- Dikurangi pendanaan sponsor | 0
+- Anggaran hadiah bersih | 1800000
+- Kelayakan: apakah slot terisi?
+- Pemain ranked | 400
+- Kualifikator (memenuhi syarat tiket) | 40
+- Slot tersedia per bulan | 64
+- Status | Slot belum penuh - longgarkan syarat tiket
+- Peluang lolos per kualifikator | 1
+- Hadiah rata-rata per slot | 21875
+
+## Ekonomi
+
+- Ekonomi Bulanan
+- Pendapatan, biaya, titik impas, dan skenario skala
+- Metrik | Nilai | Keterangan
+- Pemain
+- Pemain aktif bulanan | 1000
+- Pemain ranked | 400
+- Pembeli avatar (Koin) | 40
+- Pembeli emoji | 20
+- Penonton Live | 150
+- Pengguna voice | 250
+- Pembeli game premium (sekali beli) | 10
+- Pembeli pass satu malam | 15
+- Pelanggan klub | 5
+- Pendapatan
+- Penjualan avatar kotor | 1200000
+- Penjualan emoji kotor | 200000
+- Penjualan premium kotor | 730000
+- Potongan toko aplikasi + PPN | -585750
+- Bagi hasil perancang/penerbit | -211700 | Dari penjualan premium setelah potongan toko
+- Pendapatan bersih avatar + emoji + premium | 1332550
+- Tampilan iklan rewarded | 30000
+- Pendapatan iklan rewarded | 750000
+- Tampilan iklan Live | 2700
+- Pendapatan iklan Live | 54000
+- Pendanaan sponsor turnamen | 0
+- Total pendapatan bersih | 2136550
+- Biaya
+- Server teks + status game | 300000
+- Bandwidth TURN (voice P2P) | 19440 | Menit voice x 2(peserta-1) aliran x MB/menit x % TURN x Rp/GB
+- Server Live | 18000
+- Hadiah turnamen uang | 1400000
+- Hadiah mingguan / voucher | 400000
+- Biaya tetap lain (belum termasuk gaji) | 5000000
+- Amortisasi katalog premium | 3000000
+- Total biaya | 10137440
+- Hasil
+- Laba / rugi bulanan | -8000890
+- Margin | -3.74
+- Unit economics & titik impas
+- Pendapatan organik per pemain (ARPU) | 2,136.55 | Avatar + emoji + premium + iklan rewarded + iklan Live, tanpa sponsor
+- Biaya variabel per pemain | 337.44 | Server teks + TURN + server Live
+- Kontribusi per pemain | 1,799.11 | Jika negatif, makin banyak pemain makin rugi: turunkan biaya atau naikkan monetisasi
+- Biaya tetap + hadiah, bersih sponsor | 9800000
+- Pemain aktif untuk impas | 5,447.14
+- Hadiah (bersih sponsor) vs pendapatan organik | 0.84 | Pemeriksaan: seberapa besar hadiah memakan pendapatan organik
+- Skenario skala (rata-rata per pemain tetap, hadiah tetap)
+- Pemain aktif bulanan | Pendapatan bersih | Biaya | Laba / rugi
+- 500 | 1068275 | 9968720 | -8900445
+- 1000 | 2136550 | 10137440 | -8000890
+- 5000 | 10682750 | 11487200 | -804450
+- 10000 | 21365500 | 13174400 | 8191100
+- 50000 | 106827500 | 26672000 | 80155500
+- 100000 | 213655000 | 43544000 | 170111000

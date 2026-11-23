@@ -1,0 +1,54 @@
+erDiagram
+    APP_USER ||--|| WALLET : punya
+    APP_USER ||--o{ LEDGER_ENTRY : mencatat
+    APP_USER ||--o{ DEVICE : memakai
+    APP_USER ||--o{ OTP_CODE : verifikasi
+    APP_USER ||--o{ PURCHASE : membeli
+    COIN_PACK ||--o{ PURCHASE : paket
+    APP_USER ||--o{ OWNED_ITEM : memiliki
+    ITEM ||--o{ OWNED_ITEM : kosmetik
+    APP_USER ||--o{ GAME_OWNERSHIP : membuka
+    GAME ||--o{ GAME_OWNERSHIP : premium
+    APP_USER {
+        uuid id PK
+        text google_sub UK
+        text email
+        text phone_hash UK
+        bytea phone_enc
+        text display_name
+        text avatar_id
+        int trophies
+        text status
+    }
+    WALLET {
+        uuid user_id PK
+        int coins
+        int stars
+        int tickets
+        int win_progress
+    }
+    LEDGER_ENTRY {
+        uuid id PK
+        uuid user_id FK
+        text currency
+        int amount
+        text reason
+        uuid ref_id
+    }
+    PURCHASE {
+        uuid id PK
+        uuid user_id FK
+        text pack_id FK
+        text store_txn UK
+        text state
+    }
+    ITEM {
+        text id PK
+        text kind
+        int price_coins
+    }
+    GAME {
+        text id PK
+        bool premium
+        int price_coins
+    }

@@ -1,0 +1,60 @@
+erDiagram
+    COMMUNITY ||--o{ COMMUNITY_MEMBER : anggota
+    APP_USER ||--o{ COMMUNITY_MEMBER : bergabung
+    COMMUNITY ||--o{ POST : memuat
+    APP_USER ||--o{ POST : menulis
+    POST ||--o{ POST_MEDIA : lampiran
+    POST ||--o{ POST_REPLY : balasan
+    POST ||--o{ POST_REACTION : reaksi
+    AD ||--o{ AD_IMPRESSION : tampil
+    APP_USER ||--o{ AD_IMPRESSION : melihat
+    APP_USER ||--o{ REPORT : melapor
+    APP_USER ||--o{ NOTIFICATION : menerima
+    COMMUNITY {
+        uuid id PK
+        text slug UK
+        text name
+        text game_id FK
+    }
+    POST {
+        uuid id PK
+        uuid community_id FK
+        uuid author_id FK
+        text kind
+        text body
+        timestamptz deleted_at
+    }
+    POST_MEDIA {
+        uuid id PK
+        uuid post_id FK
+        text kind
+        text url
+        text moderation
+    }
+    AD {
+        uuid id PK
+        text advertiser
+        text category
+        bool active
+    }
+    AD_IMPRESSION {
+        uuid id PK
+        uuid ad_id FK
+        uuid user_id FK
+        text placement
+        bool hidden
+    }
+    REPORT {
+        uuid id PK
+        uuid reporter_id FK
+        text target_kind
+        uuid target_id
+        text state
+    }
+    NOTIFICATION {
+        uuid id PK
+        uuid user_id FK
+        text kind
+        jsonb payload
+        timestamptz read_at
+    }
