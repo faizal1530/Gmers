@@ -33,6 +33,7 @@ interface Member {
   conn: Conn | null;
   /** Waktu pesan chat terakhir (untuk pembatas laju). */
   chatTimes: number[];
+  lastNudge: number | null;
 }
 
 interface ActiveGame {
@@ -178,7 +179,7 @@ export class RoomService {
         case "sit": {
           const room = this.rooms.get(rec.roomId);
           if (!room) break;
-          this.seatMember(room, rec.seat, { seat: rec.seat, tokenHash: rec.tokenHash, name: rec.name, conn: null, chatTimes: [] });
+          this.seatMember(room, rec.seat, { seat: rec.seat, tokenHash: rec.tokenHash, name: rec.name, conn: null, chatTimes: [], lastNudge: null });
           room.lastActivity = rec.ts;
           break;
         }
@@ -435,6 +436,8 @@ export class RoomService {
         return this.leave(conn, room, member);
       case "chat":
         return this.chat(conn, room, member, msg.text);
+      case "nudge":
+        return this.nudge(conn, room, member);
       case "play":
         return this.playerMove(conn, room, member, { type: "play", seat: -1, card: canonical(msg.card), end: msg.end });
       case "pass":
@@ -571,7 +574,7 @@ export class RoomService {
   }
 
   private sit(room: Room, tokenHash: string, name: string, seat: number, conn: Conn): void {
-    const member: Member = { seat, tokenHash, name, conn: null, chatTimes: [] };
+    const member: Member = { seat, tokenHash, name, conn: null, chatTimes: [], lastNudge: null };
     this.seatMember(room, seat, member);
     this.append({ t: "sit", roomId: room.id, ts: this.clock.now(), seat, tokenHash, name });
     this.bind(conn, room, member);
@@ -633,6 +636,34 @@ export class RoomService {
     member.conn = null;
     conn.send({ type: "left" });
     this.broadcast(room);
+  }
+
+  /** Menyundul pemain yang sedang ditunggu. Tidak disimpan di log dan tidak dicatat sebagai peristiwa. */
+  private nudge(conn: Conn, room: Room, member: Member): void {
+    const game = room.game;
+    const mine = game ? game.roomSeats.indexOf(member.seat) : -1;
+    if (!game || room.phase !== "playing" || mine < 0) {
+      conn.send(err("NOT_PLAYING", "Game belum berjalan."));
+      return;
+    }
+    if (game.state.turn === mine) {
+      conn.send(err("SELF_TURN", "Sekarang giliranmu, bukan giliran temanmu."));
+      return;
+    }
+    const now = this.clock.now();
+    if (member.lastNudge !== null && now - member.lastNudge < this.cfg.nudgeIntervalMs) {
+      conn.send(err("RATE_LIMITED", "Tunggu sebentar sebelum menyundul lagi."));
+      return;
+    }
+    const targetSeat = game.roomSeats[game.state.turn] as number;
+    const target = room.seats[targetSeat];
+    if (!target?.conn) {
+      conn.send(err("NOT_CONNECTED", `${target?.name ?? "Pemain itu"} sedang terputus.`));
+      return;
+    }
+    member.lastNudge = now;
+    target.conn.send({ type: "nudge", fromSeat: member.seat, fromName: member.name });
+    conn.send({ type: "nudge_ack", seat: targetSeat, name: target.name });
   }
 
   private chat(conn: Conn, room: Room, member: Member, text: string): void {

@@ -217,7 +217,7 @@ describe("meja Gaple: hanya langkah sah yang bisa dikirim", () => {
     );
     expect(text(q(h.root, '[data-testid="end-left"]'))).toBe("2");
     expect(text(q(h.root, '[data-testid="end-right"]'))).toBe("3");
-    const budi = q(h.root, '.chip[data-seat="1"]');
+    const budi = q(h.root, '.pl[data-seat="1"]');
     expect(text(budi)).toContain(id.table.cardsLeft(5));
     expect(q(budi, ".dot").getAttribute("aria-label")).toBe(id.lobby.offline);
     expect(h.root.querySelectorAll('[data-testid="hand"] .domino')).toHaveLength(4);
@@ -333,39 +333,39 @@ describe("sambung ulang otomatis", () => {
   });
 });
 
-describe("chat", () => {
+describe("chat sebagai tab", () => {
   function inRoom() {
     const h = mount("/g/KODE23", memoryKV({ "gmers.name": "Andi" }));
     h.sock().open();
     h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23" }));
     return h;
   }
+  const openChat = (h: ReturnType<typeof inRoom>): void => q<HTMLButtonElement>(h.root, '[data-testid="tab-chat"]').click();
   const send = (h: ReturnType<typeof inRoom>, t: string): void => {
     q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value = t;
     q<HTMLFormElement>(h.root, ".chat-form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
   };
 
-  it("tertutup secara default; pesan masuk menambah penanda belum dibaca; membuka menghapusnya", () => {
+  it("pesan masuk saat di tab lain menambah penanda pada tab Chat; membuka tab menghapusnya", () => {
     const h = inRoom();
-    const sheet = q(h.root, ".chat");
-    expect(sheet.hasAttribute("hidden")).toBe(true);
+    expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
     h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "halo", ts: 1 });
     h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "ayo mulai", ts: 2 });
-    const badge = q(h.root, ".badge");
-    expect(badge.hasAttribute("hidden")).toBe(false);
+    const badge = q(h.root, '[data-testid="chat-badge"]');
     expect(text(badge)).toBe("2");
-    expect(q(h.root, '[data-testid="chat-toggle"]').getAttribute("aria-label")).toContain(id.chat.unread(2));
-    q<HTMLButtonElement>(h.root, '[data-testid="chat-toggle"]').click();
-    expect(sheet.hasAttribute("hidden")).toBe(false);
-    expect(badge.hasAttribute("hidden")).toBe(true);
-    expect(text(q(h.root, '[data-testid="chat-log"]'))).toContain("Budi: halo");
-    q<HTMLButtonElement>(h.root, ".chat-head button").click();
-    expect(sheet.hasAttribute("hidden")).toBe(true);
+    expect(q(h.root, '[data-testid="tab-chat"]').getAttribute("aria-label")).toContain(id.chat.tabUnread(2));
+    openChat(h);
+    expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
+    expect(text(q(h.root, '[data-testid="chat-log"]'))).toContain("halo");
+    expect(text(q(h.root, ".chat-head"))).toContain(id.chat.groupTitle("KODE23"));
+    // pesan masuk saat tab Chat terbuka tidak menambah penanda
+    h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "lagi", ts: 3 });
+    expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
   });
 
   it("HTML dalam pesan ditampilkan sebagai teks dan tidak pernah dieksekusi", () => {
     const h = inRoom();
-    q<HTMLButtonElement>(h.root, '[data-testid="chat-toggle"]').click();
+    openChat(h);
     const evil = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>';
     h.sock().receive({ type: "chat", seat: 1, name: "<b>Budi</b>", text: evil, ts: 1 });
     const log = q(h.root, '[data-testid="chat-log"]');
@@ -376,18 +376,216 @@ describe("chat", () => {
 
   it("mengirim pesan yang sudah dibersihkan; pesan kosong tidak dikirim; laju dibatasi 5 per 10 detik", () => {
     const h = inRoom();
-    q<HTMLButtonElement>(h.root, '[data-testid="chat-toggle"]').click();
+    openChat(h);
     send(h, "   ");
     expect(h.sock().sent.some((m) => m.type === "chat")).toBe(false);
     send(h, "  halo\u0000   semua ");
     expect(h.sock().sent.at(-1)).toEqual({ type: "chat", text: "halo semua" });
     expect(q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value).toBe("");
     for (let i = 0; i < 4; i++) send(h, `p${i}`);
-    const count = h.sock().sent.filter((m) => m.type === "chat").length;
-    expect(count).toBe(5);
+    expect(h.sock().sent.filter((m) => m.type === "chat")).toHaveLength(5);
     send(h, "keenam");
     expect(h.sock().sent.filter((m) => m.type === "chat")).toHaveLength(5);
-    expect(text(q(h.root, ".chat .hint"))).toBe(id.chat.tooFast);
+    expect(text(q(h.root, ".chat-view .hint"))).toBe(id.chat.tooFast);
+  });
+
+  it("tanpa room: tab Chat menjelaskan bahwa chat aktif setelah masuk room", () => {
+    const h = mount("/");
+    q<HTMLButtonElement>(h.root, '[data-testid="tab-chat"]').click();
+    expect(text(h.root)).toContain(id.chat.noRoomTitle);
+  });
+});
+
+describe("tab navigasi", () => {
+  it("empat tab (Games, Room, Chat, Profil); Games aktif di beranda dan menandai halaman aktif", () => {
+    const h = mount("/");
+    const tabs = [...h.root.querySelectorAll(".tabs .tab")].map((t) => text(t));
+    expect(tabs).toEqual([id.tabs.games, id.tabs.room, id.tabs.chat, id.tabs.profile]);
+    expect(q(h.root, '[data-testid="tab-games"]').getAttribute("aria-current")).toBe("page");
+    expect(q(h.root, '[data-testid="tab-room"]').hasAttribute("aria-current")).toBe(false);
+    expect(h.root.querySelector("nav")!.getAttribute("aria-label")).toBe(id.tabs.label);
+  });
+
+  it("tab Games: Gaple aktif, Ludo dan Remi 'Segera', aturan singkat", () => {
+    const h = mount("/");
+    expect(text(h.root)).toContain(id.games.gaple.name);
+    expect([...h.root.querySelectorAll(".game-card.soon")].map((c) => text(c))).toEqual([expect.stringContaining(id.games.soon), expect.stringContaining(id.games.soon)]);
+    expect(h.root.querySelectorAll(".rules li")).toHaveLength(id.games.rules.length);
+  });
+
+  it("tab Room tanpa room: pesan kosong; tempel tautan atau kode membuka kelompok", () => {
+    const h = mount("/");
+    q<HTMLButtonElement>(h.root, '[data-testid="tab-room"]').click();
+    expect(text(h.root)).toContain(id.roomTab.emptyTitle);
+    const input = q<HTMLInputElement>(h.root, "input#tempel");
+    input.value = "bukan tautan!";
+    q<HTMLFormElement>(h.root, "form.panel").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    expect(text(h.root)).toContain(id.roomTab.pasteBad);
+    expect(h.sockets).toHaveLength(0);
+    input.value = "https://gmers.test/g/abc234";
+    q<HTMLFormElement>(h.root, "form.panel").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    expect(window.location.pathname).toBe("/g/ABC234");
+    h.sock().open();
+    expect(h.sock().sent[0]).toMatchObject({ type: "open_link", groupId: "ABC234" });
+  });
+
+  it("setelah masuk room, tab beralih ke Room; tab Games menawarkan Kembali ke room", () => {
+    const h = mount("/");
+    submitName(h.root, "Andi");
+    h.sock().open();
+    h.sock().receive(mkState({ phase: "lobby", seats: [{ name: "Andi" }, null, null, null], groupId: "KODE23" }));
+    expect(q(h.root, '[data-testid="tab-room"]').getAttribute("aria-current")).toBe("page");
+    q<HTMLButtonElement>(h.root, '[data-testid="tab-games"]').click();
+    expect(text(h.root)).toContain(id.games.inRoom("KODE23"));
+    q<HTMLButtonElement>(h.root, '[data-testid="back-to-room"]').click();
+    expect(text(h.root)).toContain(id.lobby.title);
+  });
+
+  it("tab Profil: simpan nama, ganti tema, bisukan suara, buka kebijakan privasi", () => {
+    const kv = memoryKV({ "gmers.name": "Andi" });
+    const h = mount("/", kv);
+    q<HTMLButtonElement>(h.root, '[data-testid="tab-profile"]').click();
+    const input = q<HTMLInputElement>(h.root, "input#nama");
+    expect(input.value).toBe("Andi");
+    input.value = "A";
+    q<HTMLFormElement>(h.root, "form.form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    expect(text(q(h.root, "#nama-bantuan"))).toBe(id.name.tooShort);
+    q<HTMLInputElement>(h.root, "input#nama").value = "Andi Baru";
+    q<HTMLFormElement>(h.root, "form.form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    expect(kv.data.get("gmers.name")).toBe("Andi Baru");
+
+    q<HTMLButtonElement>(h.root, '[data-theme-mode="dark"]').click();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(kv.data.get("gmers.theme")).toBe("dark");
+    q<HTMLButtonElement>(h.root, '[data-theme-mode="auto"]').click();
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+
+    q<HTMLButtonElement>(h.root, '[data-sound="off"]').click();
+    expect(h.sound.enabled).toBe(false);
+    q<HTMLButtonElement>(h.root, '[data-sound="on"]').click();
+    expect(h.sound.enabled).toBe(true);
+
+    q<HTMLButtonElement>(h.root, ".panel button.btn:not(.primary)").click();
+    expect(text(h.root)).toContain(id.privacy.title);
+    expect(window.location.pathname).toBe("/privasi");
+  });
+});
+
+describe("suara dan sundulan", () => {
+  function playing(extra: Partial<Parameters<typeof mkState>[0]> = {}) {
+    const h = mount("/g/KODE23", memoryKV({ "gmers.name": "Andi" }));
+    h.sock().open();
+    h.sock().receive(mkState({ phase: "playing", groupId: "KODE23", hand: [[1, 2], [3, 4]], board: [[2, 3]], ends: { left: 2, right: 3 }, moves: [], turn: 1, ...extra }));
+    return h;
+  }
+  const next = (over: Partial<Parameters<typeof mkState>[0]> & { moveCount: number }) => {
+    const s = mkState({ phase: "playing", groupId: "KODE23", hand: [[1, 2], [3, 4]], ...over });
+    s.game!.moveCount = over.moveCount;
+    return s;
+  };
+
+  it("kartu dipasang: bunyi 'place' dan catatan langkah; kartu baru beranimasi di sisi yang benar", () => {
+    const h = playing();
+    h.sock().receive(next({ moveCount: 1, turn: 0, board: [[2, 3], [3, 5]], ends: { left: 2, right: 5 }, moves: [{ type: "pass" }] }));
+    expect(h.sound.played).toContain("place");
+    expect(text(q(h.root, '[data-testid="lastmove"]'))).toBe(id.table.lastPlay("Budi", "3|5", "right"));
+    const placed = [...h.root.querySelectorAll(".placed")];
+    expect(placed.map((p) => p.classList.contains("pop"))).toEqual([false, true]);
+    vi.advanceTimersByTime(300);
+    expect(h.sound.played).toContain("turn"); // sekarang giliranku
+  });
+
+  it("langkah di kiri, membuka, dan lewat dijelaskan dan berbunyi sesuai", () => {
+    const h = playing();
+    h.sock().receive(next({ moveCount: 1, turn: 0, board: [[1, 2], [2, 3]], ends: { left: 1, right: 3 }, moves: [] }));
+    expect(text(q(h.root, '[data-testid="lastmove"]'))).toBe(id.table.lastPlay("Budi", "1|2", "left"));
+    expect([...h.root.querySelectorAll(".placed")].map((p) => p.classList.contains("pop"))).toEqual([true, false]);
+    h.sound.played.length = 0;
+    h.sock().receive(next({ moveCount: 2, turn: 1, board: [[1, 2], [2, 3]], ends: { left: 1, right: 3 }, moves: [] }));
+    expect(text(q(h.root, '[data-testid="lastmove"]'))).toBe(id.table.lastPass("Andi"));
+    expect(h.sound.played).toEqual(["pass"]);
+  });
+
+  it("game baru berbunyi 'start'; hasil berbunyi menang atau kalah", () => {
+    const h = mount("/g/KODE23", memoryKV({ "gmers.name": "Andi" }));
+    h.sock().open();
+    h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23" }));
+    h.sock().receive(mkState({ phase: "playing", groupId: "KODE23", turn: 1 }));
+    expect(h.sound.played).toContain("start");
+    const result = (winner: number) => ({ reason: "out" as const, winner, ranking: [{ seat: winner, rank: 1, points: 0, cardsLeft: 0 }, { seat: 1 - winner, rank: 2, points: 5, cardsLeft: 1 }] });
+    const fin = mkState({ phase: "finished", groupId: "KODE23", result: result(0) });
+    h.sock().receive(fin);
+    vi.advanceTimersByTime(400);
+    expect(h.sound.played).toContain("win");
+    expect(text(h.root)).toContain(id.result.youWon);
+
+    const h2 = mount("/g/KODE23", memoryKV({ "gmers.name": "Andi" }));
+    h2.sock().open();
+    h2.sock().receive(mkState({ phase: "playing", groupId: "KODE23", turn: 1 }));
+    h2.sock().receive(mkState({ phase: "finished", groupId: "KODE23", result: result(1) }));
+    vi.advanceTimersByTime(400);
+    expect(h2.sound.played).toContain("lose");
+  });
+
+  it("sambung ulang (state pertama) tidak membunyikan 'start' atau 'place'", () => {
+    const h = playing({ turn: 0, moves: [{ type: "pass" }] });
+    expect(h.sound.played.filter((n) => n === "start" || n === "place")).toEqual([]);
+  });
+
+  it("chat dari teman berbunyi; chat sendiri tidak", () => {
+    const h = playing();
+    h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "woi", ts: 1 });
+    h.sock().receive({ type: "chat", seat: 0, name: "Andi", text: "iya", ts: 2 });
+    expect(h.sound.played.filter((n) => n === "chat")).toHaveLength(1);
+  });
+
+  it("tombol Colek muncul saat menunggu teman, mengirim nudge, lalu masuk jeda tunggu", () => {
+    const h = playing({ turn: 1 });
+    const btn = q<HTMLButtonElement>(h.root, '[data-testid="nudge"]');
+    expect(text(btn)).toBe(id.table.nudge("Budi"));
+    btn.click();
+    expect(h.sock().sent.at(-1)).toEqual({ type: "nudge" });
+    h.sock().receive({ type: "nudge_ack", seat: 1, name: "Budi" });
+    expect(text(q(h.root, '[data-testid="nudge"]'))).toBe(id.table.nudgeWait);
+    expect(q<HTMLButtonElement>(h.root, '[data-testid="nudge"]').disabled).toBe(true);
+    expect(h.sound.played).toContain("nudge");
+    const sentBefore = h.sock().sent.length;
+    q<HTMLButtonElement>(h.root, '[data-testid="nudge"]').click();
+    expect(h.sock().sent).toHaveLength(sentBefore);
+    vi.advanceTimersByTime(10_500);
+    expect(q<HTMLButtonElement>(h.root, '[data-testid="nudge"]').disabled).toBe(false);
+  });
+
+  it("tidak ada Colek pada giliran sendiri atau saat teman terputus", () => {
+    const mine = playing({ turn: 0, moves: [{ type: "pass" }] });
+    expect(mine.root.querySelector('[data-testid="nudge"]')).toBeNull();
+    const off = playing({ turn: 1, seats: [{ name: "Andi" }, { name: "Budi", connected: false }, null, null] });
+    expect(off.root.querySelector('[data-testid="nudge"]')).toBeNull();
+  });
+
+  it("menerima sundulan: bunyi, getar, dan pemberitahuan", () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, "vibrate", { value: vibrate, configurable: true });
+    const h = playing({ turn: 0, moves: [{ type: "pass" }] });
+    h.sock().receive({ type: "nudge", fromSeat: 1, fromName: "Budi" });
+    expect(h.sound.played).toContain("nudge");
+    expect(vibrate).toHaveBeenCalled();
+    expect(text(q(h.root, ".toast"))).toBe(id.table.nudged("Budi"));
+  });
+
+  it("gestur pertama membuka kunci audio; bilah waktu mengecil mengikuti sisa waktu", () => {
+    const now = Date.now();
+    const h = playing({ turn: 1, now, deadline: now + 60_000 });
+    document.dispatchEvent(new Event("pointerdown"));
+    expect(h.sound.unlocked).toBeGreaterThan(0);
+    const fill = q(h.root, "#timefill");
+    vi.advanceTimersByTime(250);
+    const w0 = parseInt(fill.style.width, 10);
+    vi.advanceTimersByTime(30_000);
+    const w1 = parseInt(fill.style.width, 10);
+    expect(w0).toBeGreaterThan(90);
+    expect(w1).toBeLessThan(60);
+    expect(w1).toBeGreaterThan(40);
   });
 });
 

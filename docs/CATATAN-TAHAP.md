@@ -143,3 +143,23 @@ Total 20 keputusan, semuanya bisa diubah tanpa membongkar arsitektur:
 2. Satu replika di Southeast Asia; replika `sfo` otomatis dinolkan lewat `railway service scale`.
 3. `railway.toml` hanya berisi kunci yang pasti; region diatur di CLI/dasbor.
 4. Domain bawaan Railway; tanpa domain kustom, tanpa add-on.
+
+## Pembaruan pengalaman bermain: tab, tampilan meja, suara, sundulan (24 Nov 2026)
+
+Permintaan Faizal setelah uji sendiri: pengalaman kurang menarik; mockup permainan diperbaiki, tab bawah mengikuti mockup (Chat, Games, dst.), dan ditambah suara (kartu dipasang, menyundul teman, lewat, dst.). Faizal memilih cakupan tab "Chat, Games, Room, Profil" (tanpa Komunitas, Live, teman, Tiket).
+
+### Dibangun
+- **Tab bawah:** Games (kartu Gaple + Ludo/Remi "Segera" + aturan singkat + buat room), Room (tautan, ruang tunggu, meja, hasil; tanpa room: tempel tautan atau kode), Chat (obrolan room sebagai tab penuh, bukan lapisan; penanda belum dibaca di ikon tab), Profil (ganti nama, tema Otomatis/Terang/Gelap, suara hidup/mati, kebijakan privasi). Tema manual lewat atribut `data-theme`.
+- **Meja:** avatar berwarna per pemain dengan cincin giliran dan titik koneksi, bilah waktu yang mengecil (merah di bawah 25%), catatan langkah terakhir ("Budi memasang 3|5 di kanan", "Citra lewat"), kartu yang baru dipasang beranimasi di sisi yang benar, kartu tangan yang menyala dan berdenyut bila bisa dimainkan. Layar hasil: pemenang besar dengan avatar, peringkat berwarna, "Kamu menang!" bila menang. Animasi mati bila `prefers-reduced-motion`.
+- **Suara (`src/sound.ts`):** disintesis lewat Web Audio, tanpa berkas audio dan tanpa pihak ketiga. Bunyi: kartu dipasang, lewat, giliranmu, sundulan, game mulai (kocokan), menang, kalah, chat dari teman, galat. Dibuka pada gestur pertama (kebijakan peramban), dapat dimatikan di Profil (tersimpan), getar singkat untuk sundulan dan giliran bila perangkat mendukung. Suara tidak pernah boleh merusak permainan (semua dibungkus `try/catch`).
+- **Sundulan (colek) teman:** pesan baru `nudge` di server (hanya saat game berjalan, hanya ke pemain yang sedang ditunggu dan terhubung, ditolak bila giliran sendiri, jeda 10 detik per pengirim, `nudgeIntervalMs`). Target menerima `nudge` (bunyi, getar, pemberitahuan), pengirim menerima `nudge_ack`. Tidak masuk log dan tidak dicatat sebagai peristiwa CSV (spesifikasi CSV tidak berubah).
+
+### Uji
+Server 69 (+3 uji nudge dan protokol), klien 71 (+28: tab, tempel tautan, profil, tema, suara, sundulan, animasi, bilah waktu, chat sebagai tab), E2E Chromium diperbarui (chat lewat tab, sundulan antar-browser, tab Games dan Profil di 360 px tanpa overflow). `pnpm verify` hijau.
+
+### Keputusan otomatis (tambahan)
+1. **Komunitas, Live, teman, Tiket tidak dibangun** (keputusan Faizal): tab-tab itu butuh akun, moderasi, dan keputusan privasi/hukum di luar MVP.
+2. **Ludo dan Remi hanya kartu "Segera"** supaya pengguna uji tidak mengira keduanya sudah ada. Ubah di `views/games.ts` bila tidak diinginkan.
+3. **Suara bawaan hidup.** Peramban tetap menahan bunyi sampai ada sentuhan pertama. Mengubah bawaan: `SoundPlayer` di `src/sound.ts` (`kv.get(KEY) !== "off"`).
+4. **Sundulan tidak dicatat di CSV** agar kolom dan penghitung metrik tidak berubah; menambahkannya cukup satu `emit` di `service.ts`.
+5. **Nama di Profil hanya berlaku untuk room berikutnya** (nama kursi di room yang sedang berjalan tidak diubah, karena nama disimpan server per sesi).

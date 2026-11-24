@@ -33,3 +33,10 @@ describe("skema pesan klien", () => {
     expect(schema.safeParse(msg).success).toBe(false);
   });
 });
+
+describe("pesan nudge", () => {
+  it("diterima tanpa isi tambahan; kunci tambahan ditolak", () => {
+    expect(schema.parse({ type: "nudge" })).toEqual({ type: "nudge" });
+    expect(schema.safeParse({ type: "nudge", seat: 1 }).success).toBe(false);
+  });
+});

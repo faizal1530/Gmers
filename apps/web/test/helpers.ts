@@ -2,6 +2,7 @@ import type { ServerMessage, StateMessage } from "@gmers/server/protocol";
 import type { SocketLike } from "../src/net";
 import { App } from "../src/app";
 import type { KV } from "../src/storage";
+import type { SoundLike, SoundName } from "../src/sound";
 
 export class FakeSocket implements SocketLike {
   readyState = 0;
@@ -40,7 +41,23 @@ export function memoryKV(initial: Record<string, string> = {}): KV & { data: Map
   return { data, get: (k) => data.get(k) ?? null, set: (k, v) => void data.set(k, v) };
 }
 
+export class FakeSound implements SoundLike {
+  enabled = true;
+  played: SoundName[] = [];
+  unlocked = 0;
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+  }
+  play(name: SoundName): void {
+    if (this.enabled) this.played.push(name);
+  }
+  unlock(): void {
+    this.unlocked++;
+  }
+}
+
 export interface Harness {
+  sound: FakeSound;
   app: App;
   root: HTMLElement;
   sockets: FakeSocket[];
@@ -55,7 +72,9 @@ export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean } = 
   const root = document.getElementById("app") as HTMLElement;
   const sockets: FakeSocket[] = [];
   const copied: string[] = [];
+  const sound = new FakeSound();
   const app = new App({
+    sound,
     root,
     kv,
     origin: "https://gmers.test",
@@ -71,7 +90,7 @@ export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean } = 
     },
   });
   app.start();
-  return { app, root, sockets, kv, sock: () => sockets[sockets.length - 1] as FakeSocket, copied };
+  return { app, root, sockets, kv, sound, sock: () => sockets[sockets.length - 1] as FakeSocket, copied };
 }
 
 type Seat = { name: string; connected?: boolean; cardsLeft?: number | null };

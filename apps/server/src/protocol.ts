@@ -27,6 +27,7 @@ export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMinLength" 
     z.object({ type: z.literal("chat"), text: z.string().trim().min(1).max(cfg.chatMaxLength).regex(noControl) }).strict(),
     z.object({ type: z.literal("rematch") }).strict(),
     z.object({ type: z.literal("leave") }).strict(),
+    z.object({ type: z.literal("nudge") }).strict(),
     z.object({ type: z.literal("ping") }).strict(),
   ]);
 }
@@ -92,5 +93,9 @@ export type ServerMessage =
   | ProtocolError
   | { type: "pong"; now: number }
   | { type: "left" }
+  /** Dikirim ke pemain yang sedang ditunggu ("sundul"). */
+  | { type: "nudge"; fromSeat: number; fromName: string }
+  /** Konfirmasi ke pengirim sundulan. */
+  | { type: "nudge_ack"; seat: number; name: string }
   | { type: "group_info"; groupId: string; phase: "none" | "lobby" | "playing" | "finished"; players: number; maxSeats: number; isMember: boolean }
   | { type: "chat"; seat: number; name: string; text: string; ts: number };

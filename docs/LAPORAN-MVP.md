@@ -119,3 +119,9 @@ Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain
 3. Coba di HP Android asli (tautan dari WhatsApp, pindah WiFi ke data seluler).
 4. Uji dua kelompok percobaan, lalu jalankan `pnpm hitung`.
 5. Tinjauan hukum kebijakan privasi.
+
+## 9. Pembaruan pengalaman bermain (24 Nov 2026)
+
+Setelah uji sendiri: tab bawah **Games, Room, Chat, Profil** (mengikuti pola mockup, tanpa Komunitas, Live, teman, Tiket), meja yang lebih hidup (avatar, bilah waktu, catatan langkah terakhir, animasi kartu, hasil dengan pemenang), **suara** (kartu, lewat, giliranmu, sundulan, mulai, menang, kalah, chat; bisa dimatikan di Profil), dan tombol **Colek** untuk mengingatkan pemain yang sedang ditunggu. Rincian dan keputusan otomatis: `docs/CATATAN-TAHAP.md`, bagian "Pembaruan pengalaman bermain".
+
+Belum teruji di HP asli: bunyi (kebijakan putar-otomatis iOS Safari dan WebView WhatsApp bisa menahan suara sampai sentuhan pertama), getar (iOS tidak mendukung `navigator.vibrate`), dan keterbacaan avatar/kartu di layar kecil selain 360 px. Cek ini saat uji di Android dan iPhone asli.

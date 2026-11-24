@@ -2,6 +2,7 @@ import type { StateMessage } from "@gmers/server/protocol";
 import { id } from "../i18n/id";
 import { h } from "../dom";
 import { shareUrl, whatsappLink } from "../logic";
+import { avatar } from "./avatar";
 
 export interface LobbyActions {
   onStart: () => void;
@@ -60,6 +61,7 @@ export function lobbyView(s: StateMessage, a: LobbyActions): HTMLElement {
             { class: seat ? "seat" : "seat empty", "data-seat": i },
             seat
               ? [
+                  avatar(seat.name, i, "md"),
                   h("span", { class: `dot ${seat.connected ? "on" : "off"}`, "aria-hidden": "true" }),
                   h("span", { class: "grow" }, seat.name, seat.isYou ? ` (${id.lobby.you})` : "", i === s.room.hostSeat ? ` · ${id.lobby.owner}` : ""),
                   h("span", { class: seat.connected ? "tag good" : "tag warn" }, seat.connected ? id.lobby.ready : id.lobby.offline),

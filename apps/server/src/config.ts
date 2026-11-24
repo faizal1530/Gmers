@@ -20,6 +20,8 @@ export interface ServerConfig {
   nameMaxLength: number;
   chatMaxLength: number;
   /** Pembatas laju chat per pemain: paling banyak chatBurst pesan per chatWindowMs. */
+  /** Jeda minimal antar sundulan dari satu pemain. */
+  nudgeIntervalMs: number;
   chatBurst: number;
   chatWindowMs: number;
   maxMessageBytes: number;
@@ -50,6 +52,7 @@ export const defaultServerConfig: ServerConfig = {
   nameMinLength: 2,
   nameMaxLength: 16,
   chatMaxLength: 300,
+  nudgeIntervalMs: 10_000,
   chatBurst: 5,
   chatWindowMs: 10_000,
   maxMessageBytes: 4096,

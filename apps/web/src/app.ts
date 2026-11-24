@@ -4,13 +4,18 @@ import { clear, h } from "./dom";
 import { id } from "./i18n/id";
 import { cardKey, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
 import { GameClient, type ConnStatus, type SocketLike } from "./net";
+import { SoundPlayer, haptic, type SoundLike } from "./sound";
 import { Identity, createKV, type KV } from "./storage";
+import { applyTheme, readTheme, type ThemeMode } from "./theme";
 import { ChatPanel } from "./views/chat";
-import { nameForm } from "./views/forms";
+import { gamesView } from "./views/games";
 import { lobbyView } from "./views/lobby";
 import { errorView, notFoundView, privacyView } from "./views/misc";
+import { tabBar, type Tab } from "./views/nav";
+import { profileView } from "./views/profile";
 import { resultView } from "./views/result";
-import { tableView } from "./views/table";
+import { tableView, type LastMove } from "./views/table";
+import { nameForm } from "./views/forms";
 
 type Intent =
   | { kind: "none" }
@@ -27,7 +32,10 @@ export interface AppDeps {
   wsUrl?: string;
   copy?: (text: string) => Promise<boolean>;
   origin?: string;
+  sound?: SoundLike;
 }
+
+const NUDGE_COOLDOWN_MS = 10_000;
 
 async function defaultCopy(text: string): Promise<boolean> {
   try {
@@ -50,11 +58,32 @@ async function defaultCopy(text: string): Promise<boolean> {
   }
 }
 
+const cardText = (c: Card): string => `${c[0]}|${c[1]}`;
+
+/** Langkah terakhir dari selisih dua state berurutan (untuk catatan di meja dan animasi). */
+export function describeLastMove(prev: StateMessage | null, next: StateMessage): { kind: "open" | "play" | "pass"; seat: number; name: string; card?: Card; side?: "left" | "right" } | null {
+  if (!prev?.game || !next.game) return null;
+  if (prev.room.id !== next.room.id || prev.room.gameNo !== next.room.gameNo) return null;
+  if (next.game.moveCount <= prev.game.moveCount) return null;
+  const seat = prev.game.turn;
+  const name = next.room.seats[seat]?.name ?? "";
+  const pb = prev.game.board;
+  const nb = next.game.board;
+  if (nb.length <= pb.length) return { kind: "pass", seat, name };
+  if (pb.length === 0) return { kind: "open", seat, name, card: nb[0] as Card, side: "left" };
+  const leftChanged = (nb[0] as Card)[0] !== (pb[0] as Card)[0] || (nb[0] as Card)[1] !== (pb[0] as Card)[1];
+  return leftChanged ? { kind: "play", seat, name, card: nb[0] as Card, side: "left" } : { kind: "play", seat, name, card: nb[nb.length - 1] as Card, side: "right" };
+}
+
 export class App {
+  private readonly kv: KV;
   private readonly identity: Identity;
   private readonly chat: ChatPanel;
+  private readonly sound: SoundLike;
   private client: GameClient | null = null;
   private route: Route = { kind: "home" };
+  private tab: Tab = "games";
+  private theme: ThemeMode = "auto";
   private intent: Intent = { kind: "none" };
   private room: StateMessage | null = null;
   private info: GroupInfo | null = null;
@@ -64,7 +93,10 @@ export class App {
   private replaced = false;
   private linkMissing = false;
   private pendingCard: Card | null = null;
+  private lastMove: LastMove | null = null;
   private clockOffset = 0;
+  private turnTotalMs = 60_000;
+  private nudgeUntil = 0;
   private status: ConnStatus = "connecting";
   private lastKey = "";
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,30 +105,46 @@ export class App {
   private readonly header: HTMLElement;
   private readonly banner: HTMLElement;
   private readonly main: HTMLElement;
+  private readonly nav: HTMLElement;
   private readonly toast: HTMLElement;
   private readonly copy: (text: string) => Promise<boolean>;
   private readonly origin: string;
   private readonly wsUrl: string;
 
   constructor(private readonly deps: AppDeps) {
-    this.identity = new Identity(deps.kv ?? createKV());
+    this.kv = deps.kv ?? createKV();
+    this.identity = new Identity(this.kv);
+    this.sound = deps.sound ?? new SoundPlayer(this.kv);
     this.copy = deps.copy ?? defaultCopy;
     this.origin = deps.origin ?? window.location.origin;
     this.wsUrl = deps.wsUrl ?? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
-    this.chat = new ChatPanel((text) => this.sendMsg({ type: "chat", text }));
+    this.chat = new ChatPanel(
+      (text) => this.sendMsg({ type: "chat", text }),
+      () => this.renderNav(),
+    );
     this.header = h("header", { class: "top" });
     this.banner = h("div", { class: "banner", role: "status", "aria-live": "polite", hidden: true, "data-testid": "banner" });
     this.main = h("main", { class: "main", id: "utama", tabindex: "-1" });
+    this.nav = h("div", { class: "navwrap" });
     this.toast = h("div", { class: "toast", role: "status", "aria-live": "polite", hidden: true });
-    deps.root.append(this.header, this.banner, this.main, this.toast, this.chat.sheet);
+    deps.root.append(this.header, this.banner, this.main, this.nav, this.toast);
   }
 
   start(): void {
+    this.theme = readTheme(this.kv);
+    applyTheme(this.theme);
     this.route = parseRoute(window.location.pathname);
     if (this.route.kind === "link") {
+      this.tab = "room";
       this.intent = { kind: "open", groupId: this.route.groupId };
       this.ensureClient();
+    } else if (this.route.kind === "privacy") {
+      this.tab = "profile";
     }
+    // Kebijakan putar-otomatis peramban: buka kunci audio pada gestur pertama.
+    const unlock = (): void => this.sound.unlock();
+    document.addEventListener("pointerdown", unlock, { once: true });
+    document.addEventListener("keydown", unlock, { once: true });
     this.tick = setInterval(() => this.updateTimer(), 250);
     window.addEventListener("popstate", () => {
       this.route = parseRoute(window.location.pathname);
@@ -149,15 +197,7 @@ export class App {
   private onMessage(m: ServerMessage): void {
     switch (m.type) {
       case "state":
-        this.room = m;
-        this.clockOffset = m.now - Date.now();
-        this.busy = false;
-        this.notice = null;
-        this.fatal = null;
-        this.intent = { kind: "join", groupId: m.room.groupId, name: this.identity.name() ?? m.room.seats[m.you.seat]?.name ?? "Pemain" };
-        if (window.location.pathname !== `/g/${m.room.groupId}`) window.history.replaceState(null, "", `/g/${m.room.groupId}`);
-        this.route = { kind: "link", groupId: m.room.groupId };
-        this.render(false);
+        this.onState(m);
         return;
       case "group_info":
         this.info = m;
@@ -168,11 +208,26 @@ export class App {
         }
         this.render(false);
         return;
-      case "chat":
-        this.chat.add({ seat: m.seat, name: m.name, text: m.text, mine: this.room ? m.seat === this.room.you.seat : false });
+      case "chat": {
+        const mine = this.room ? m.seat === this.room.you.seat : false;
+        this.chat.add({ seat: m.seat, name: m.name, text: m.text, mine });
+        if (!mine) this.sound.play("chat");
+        return;
+      }
+      case "nudge":
+        this.sound.play("nudge");
+        haptic(this.sound, [60, 40, 60]);
+        this.showToast(id.table.nudged(m.fromName));
+        return;
+      case "nudge_ack":
+        this.nudgeUntil = Date.now() + NUDGE_COOLDOWN_MS;
+        this.sound.play("nudge");
+        this.showToast(id.table.nudgeSent(m.name));
+        this.render(false);
         return;
       case "left":
         this.room = null;
+        this.lastMove = null;
         this.chat.reset();
         this.info = null;
         if (this.route.kind === "link") this.intent = { kind: "open", groupId: this.route.groupId };
@@ -185,6 +240,50 @@ export class App {
       case "pong":
         return;
     }
+  }
+
+  private onState(m: StateMessage): void {
+    const prev = this.room;
+    const joinedNow = prev === null;
+    this.room = m;
+    this.clockOffset = m.now - Date.now();
+    this.busy = false;
+    this.notice = null;
+    this.fatal = null;
+    this.intent = { kind: "join", groupId: m.room.groupId, name: this.identity.name() ?? m.room.seats[m.you.seat]?.name ?? "Pemain" };
+    if (window.location.pathname !== `/g/${m.room.groupId}`) window.history.replaceState(null, "", `/g/${m.room.groupId}`);
+    this.route = { kind: "link", groupId: m.room.groupId };
+    this.chat.setHeader(m.room.groupId, m.room.seats.filter(Boolean).length);
+    if (joinedNow) this.tab = "room";
+
+    // Suara dan catatan langkah dari selisih state.
+    const move = describeLastMove(prev, m);
+    const phaseNow = m.room.phase;
+    const newGame = !!prev && phaseNow === "playing" && (prev.room.phase !== "playing" || prev.room.gameNo !== m.room.gameNo);
+    if (newGame) {
+      this.lastMove = null;
+      this.sound.play("start");
+    } else if (move) {
+      this.lastMove = {
+        side: move.kind === "pass" ? null : (move.side ?? null),
+        text: move.kind === "pass" ? id.table.lastPass(move.name) : move.kind === "open" ? id.table.lastOpen(move.name, cardText(move.card as Card)) : id.table.lastPlay(move.name, cardText(move.card as Card), move.side as "left" | "right"),
+      };
+      this.sound.play(move.kind === "pass" ? "pass" : "place");
+      if (phaseNow === "playing" && isMyTurn(m) && !(prev && isMyTurn(prev))) {
+        setTimeout(() => this.sound.play("turn"), 220);
+        haptic(this.sound, 30);
+      }
+    } else if (phaseNow === "playing" && prev && isMyTurn(m) && !isMyTurn(prev)) {
+      setTimeout(() => this.sound.play("turn"), 50);
+    }
+    if (prev && prev.room.phase !== "finished" && phaseNow === "finished" && m.game?.result) {
+      const won = m.game.result.winner === m.you.seat;
+      setTimeout(() => this.sound.play(won ? "win" : "lose"), 350);
+    }
+    if (m.game && (!prev?.game || prev.game.moveCount !== m.game.moveCount || prev.room.gameNo !== m.room.gameNo) && m.game.turnDeadline !== null) {
+      this.turnTotalMs = Math.max(1000, m.game.turnDeadline - m.now);
+    }
+    this.render(false);
   }
 
   private onError(code: string, message: string): void {
@@ -214,6 +313,7 @@ export class App {
       this.render(false);
       return;
     }
+    this.sound.play("error");
     this.showToast(message);
     this.render(false);
   }
@@ -238,6 +338,19 @@ export class App {
     this.flush();
   }
 
+  /** Buka kelompok dari tautan atau kode yang ditempel. */
+  private openGroup(groupId: string): void {
+    this.info = null;
+    this.notice = null;
+    this.linkMissing = false;
+    this.intent = { kind: "open", groupId };
+    this.route = { kind: "link", groupId };
+    this.tab = "room";
+    window.history.pushState(null, "", `/g/${groupId}`);
+    this.render(true);
+    this.flush();
+  }
+
   private play(card: Card, end: "left" | "right"): void {
     // Hanya langkah yang ada di yourMoves milik server yang boleh dikirim.
     const s = this.room;
@@ -257,6 +370,22 @@ export class App {
     this.sendMsg({ type: "pass" });
   }
 
+  private nudge(): void {
+    if (Date.now() < this.nudgeUntil) return;
+    this.sendMsg({ type: "nudge" });
+  }
+
+  private selectTab(t: Tab): void {
+    if (this.route.kind === "privacy") {
+      this.route = this.room ? { kind: "link", groupId: this.room.room.groupId } : { kind: "home" };
+      window.history.pushState(null, "", this.room ? `/g/${this.room.room.groupId}` : "/");
+    }
+    this.tab = t;
+    this.chat.setActive(t === "chat" && !!this.room);
+    this.render(true);
+    if (t === "chat" && this.room) this.chat.focusInput();
+  }
+
   private goHome(): void {
     this.client?.stop();
     this.client = null;
@@ -265,9 +394,18 @@ export class App {
     this.intent = { kind: "none" };
     this.linkMissing = false;
     this.replaced = false;
+    this.lastMove = null;
     this.chat.reset();
     window.history.pushState(null, "", "/");
     this.route = { kind: "home" };
+    this.tab = "games";
+    this.render(true);
+  }
+
+  private openPrivacy(): void {
+    window.history.pushState(null, "", "/privasi");
+    this.route = { kind: "privacy" };
+    this.tab = "profile";
     this.render(true);
   }
 
@@ -283,17 +421,39 @@ export class App {
   // ---------- tampilan ----------
 
   private updateTimer(): void {
-    const el = this.main.querySelector<HTMLElement>("#timer");
     const g = this.room?.game;
-    if (!el || !g || this.room?.room.phase !== "playing") return;
-    const left = secondsLeft(g.turnDeadline, Date.now() + this.clockOffset);
-    el.textContent = left === null ? "" : id.table.secondsLeft(left);
+    const el = this.main.querySelector<HTMLElement>("#timer");
+    if (el && g && this.room?.room.phase === "playing") {
+      const left = secondsLeft(g.turnDeadline, Date.now() + this.clockOffset);
+      el.textContent = left === null ? "" : id.table.secondsLeft(left);
+      const fill = this.main.querySelector<HTMLElement>("#timefill");
+      if (fill && g.turnDeadline !== null) {
+        const ratio = Math.max(0, Math.min(1, (g.turnDeadline - (Date.now() + this.clockOffset)) / this.turnTotalMs));
+        fill.style.width = `${Math.round(ratio * 100)}%`;
+        fill.classList.toggle("low", ratio < 0.25);
+      }
+    }
+    const nudge = this.main.querySelector<HTMLButtonElement>("#nudge");
+    if (nudge) {
+      const cooling = Date.now() < this.nudgeUntil;
+      nudge.disabled = cooling || this.status !== "open";
+      if (!cooling && nudge.textContent === id.table.nudgeWait) {
+        nudge.textContent = id.table.nudge(this.room?.room.seats[this.room.game?.turn ?? 0]?.name ?? "");
+      }
+    }
   }
 
   private renderHeader(): void {
     clear(this.header);
-    this.header.append(h("a", { class: "brand", href: "/", onclick: (e: Event) => { e.preventDefault(); this.goHome(); } }, id.appName));
-    if (this.room) this.header.append(h("span", { class: "code", "data-testid": "group-code" }, this.room.room.groupId), this.chat.button);
+    this.header.append(
+      h("a", { class: "brand", href: "/", onclick: (e: Event) => { e.preventDefault(); this.selectTab("games"); } }, id.appName),
+    );
+    if (this.room) this.header.append(h("span", { class: "code", "data-testid": "group-code" }, this.room.room.groupId));
+  }
+
+  private renderNav(): void {
+    clear(this.nav);
+    this.nav.append(tabBar(this.tab, this.chat.unreadCount, (t) => this.selectTab(t)));
   }
 
   private renderBanner(): void {
@@ -316,56 +476,110 @@ export class App {
   private screenKey(): string {
     if (this.fatal) return `fatal:${this.fatal.message}`;
     if (this.linkMissing) return "notfound-link";
-    if (this.room) return "room";
-    if (this.route.kind === "home") return `home:${this.busy}`;
     if (this.route.kind === "privacy") return "privacy";
     if (this.route.kind === "notfound") return "notfound";
-    const i = this.info;
-    return `link:${this.busy}:${this.notice ?? ""}:${i ? `${i.phase}/${i.players}/${i.isMember}` : "loading"}`;
+    switch (this.tab) {
+      case "games":
+        return `games:${this.busy}:${this.room?.room.groupId ?? ""}`;
+      case "room": {
+        if (this.room) return "room";
+        const i = this.info;
+        return this.route.kind === "link" ? `link:${this.busy}:${this.notice ?? ""}:${i ? `${i.phase}/${i.players}/${i.isMember}` : "loading"}` : "roomempty";
+      }
+      case "chat":
+        return `chat:${this.room?.room.groupId ?? "none"}`;
+      case "profile":
+        return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}`;
+    }
   }
 
   render(force: boolean): void {
     this.renderHeader();
     this.renderBanner();
+    this.renderNav();
     const key = this.screenKey();
-    const formScreen = key.startsWith("home") || key.startsWith("link");
-    if (!force && key === this.lastKey && formScreen) return;
+    if (!force && key === this.lastKey && key !== "room") return;
     this.lastKey = key;
     clear(this.main);
     this.main.classList.toggle("stale", !!this.room && this.status !== "open");
-    this.main.append(this.buildScreen(key));
+    this.main.append(this.buildScreen());
     this.updateTimer();
   }
 
-  private buildScreen(key: string): HTMLElement {
+  private buildScreen(): HTMLElement {
     if (this.fatal) return errorView(this.fatal.message, null, () => this.goHome());
     if (this.linkMissing) return notFoundView("link", () => this.goHome());
-    if (this.room) return this.buildRoom(this.room);
-    switch (this.route.kind) {
-      case "home":
-        return this.buildHome();
-      case "privacy":
-        return privacyView(() => this.goHome());
-      case "notfound":
-        return notFoundView("page", () => this.goHome());
-      case "link":
-        return this.buildLink(key);
+    if (this.route.kind === "privacy") return privacyView(() => this.selectTab("profile"));
+    if (this.route.kind === "notfound") return notFoundView("page", () => this.goHome());
+    switch (this.tab) {
+      case "games":
+        return gamesView({
+          initialName: this.identity.name() ?? "",
+          busy: this.busy,
+          roomCode: this.room?.room.groupId ?? null,
+          onCreate: (n) => this.create(n),
+          onBackToRoom: () => this.selectTab("room"),
+        });
+      case "room":
+        if (this.room) return this.buildRoom(this.room);
+        return this.route.kind === "link" ? this.buildLink() : this.buildRoomEmpty();
+      case "chat":
+        return this.room
+          ? this.chat.view
+          : h("section", { class: "panel center" }, h("h1", {}, id.chat.noRoomTitle), h("p", {}, id.chat.noRoomBody), h("button", { class: "btn primary", type: "button", onclick: () => this.selectTab("games") }, id.roomTab.toGames));
+      case "profile":
+        return profileView({
+          name: this.identity.name() ?? "",
+          theme: this.theme,
+          soundOn: this.sound.enabled,
+          onSaveName: (n) => this.identity.setName(n),
+          onTheme: (mode) => {
+            this.theme = mode;
+            applyTheme(mode, this.kv);
+            this.render(true);
+          },
+          onSound: (on) => {
+            this.sound.setEnabled(on);
+            if (on) this.sound.play("turn");
+            this.render(true);
+          },
+          onPrivacy: () => this.openPrivacy(),
+        });
     }
   }
 
-  private buildHome(): HTMLElement {
+  private buildRoomEmpty(): HTMLElement {
+    const input = h("input", { id: "tempel", class: "input", type: "text", placeholder: id.roomTab.pastePlaceholder, autocomplete: "off", autocapitalize: "off", "aria-label": id.roomTab.pasteLabel });
+    const hint = h("p", { class: "hint", role: "status", "aria-live": "polite" });
     return h(
       "section",
       { class: "stack" },
-      h("h1", {}, id.home.title),
-      h("p", { class: "lead" }, id.tagline),
-      h("div", { class: "panel" }, nameForm({ initial: this.identity.name() ?? "", submitLabel: this.busy ? id.home.creating : id.home.create, busy: this.busy, onSubmit: (n) => this.create(n) })),
-      h("div", { class: "panel" }, h("h2", {}, id.home.howTitle), h("ol", {}, id.home.how.map((t) => h("li", {}, t)))),
-      h("a", { class: "btn link", href: "/privasi", onclick: (e: Event) => { e.preventDefault(); window.history.pushState(null, "", "/privasi"); this.route = { kind: "privacy" }; this.render(true); } }, id.home.privacy),
+      h("div", { class: "panel center" }, h("h1", {}, id.roomTab.emptyTitle), h("p", {}, id.roomTab.emptyBody), h("button", { class: "btn primary", type: "button", onclick: () => this.selectTab("games") }, id.roomTab.toGames)),
+      h(
+        "form",
+        {
+          class: "panel form",
+          novalidate: true,
+          onsubmit: (ev: Event) => {
+            ev.preventDefault();
+            const code = parsePasted(input.value);
+            if (!code) {
+              hint.textContent = id.roomTab.pasteBad;
+              hint.classList.add("bad");
+              return;
+            }
+            this.openGroup(code);
+          },
+        },
+        h("label", { for: "tempel", class: "label" }, id.roomTab.pasteLabel),
+        input,
+        hint,
+        h("button", { class: "btn", type: "submit" }, id.roomTab.pasteGo),
+      ),
     );
   }
 
-  private buildLink(key: string): HTMLElement {
+  private buildLink(): HTMLElement {
     const i = this.info;
     if (!i) return h("section", { class: "panel center", role: "status" }, h("p", {}, id.link.opening));
     const blocked = i.phase === "playing" ? id.link.playing : i.players >= i.maxSeats ? id.link.full : null;
@@ -382,7 +596,6 @@ export class App {
             h("button", { class: "btn primary", type: "button", onclick: () => { this.info = null; this.notice = null; this.flush(); this.render(true); } }, id.link.retry),
           )
         : h("div", { class: "panel" }, nameForm({ initial: this.identity.name() ?? "", submitLabel: this.busy ? id.link.joining : id.link.join, busy: this.busy, onSubmit: (n) => this.joinWith(n) })),
-      key ? null : null,
     );
   }
 
@@ -407,6 +620,8 @@ export class App {
     return tableView(s, {
       connected,
       pendingCard: this.pendingCard,
+      lastMove: this.lastMove,
+      nudgeCooling: Date.now() < this.nudgeUntil,
       onPlay: (c, e) => this.play(c, e),
       onNeedEnd: (c) => {
         this.pendingCard = c;
@@ -417,6 +632,19 @@ export class App {
         this.render(false);
       },
       onPass: () => this.pass(),
+      onNudge: () => this.nudge(),
     });
+  }
+}
+
+/** Ambil kode kelompok dari tautan lengkap atau kode polos; null bila tidak dikenali. */
+export function parsePasted(text: string): string | null {
+  const t = text.trim();
+  if (/^[A-Za-z0-9]{4,10}$/.test(t)) return t.toUpperCase();
+  try {
+    const r = parseRoute(new URL(t).pathname);
+    return r.kind === "link" ? r.groupId : null;
+  } catch {
+    return null;
   }
 }

@@ -187,20 +187,40 @@ async function main(): Promise<void> {
     await shot(A, "04-meja");
     await shot(D, "04-meja-gelap");
 
-    // 4. Chat
-    await B.click('[data-testid="chat-toggle"]');
+    // 4. Chat (tab) dan sundulan
+    await B.click('[data-testid="tab-chat"]');
     await B.fill('[data-testid="chat-input"]', "halo <b>semua</b>");
     await B.click('[data-testid="chat-send"]');
-    await A.waitForSelector(".badge:not([hidden])");
-    check((await A.textContent(".badge"))?.trim() === "1", "penanda pesan belum dibaca muncul");
-    await A.click('[data-testid="chat-toggle"]');
+    await A.waitForSelector('[data-testid="chat-badge"]');
+    check((await A.textContent('[data-testid="chat-badge"]'))?.trim() === "1", "penanda pesan belum dibaca muncul di tab Chat");
+    await A.click('[data-testid="tab-chat"]');
     const logText = (await A.textContent('[data-testid="chat-log"]')) ?? "";
-    check(logText.includes("Budi: halo <b>semua</b>"), "isi chat tampil sebagai teks");
+    check(logText.includes("halo <b>semua</b>"), "isi chat tampil sebagai teks");
     check((await A.locator('[data-testid="chat-log"] b').count()) === 0, "tidak ada elemen HTML dari chat");
-    await noHorizontalOverflow(A, "chat terbuka");
+    await noHorizontalOverflow(A, "tab chat");
     await shot(A, "05-chat");
-    await A.click(".chat-head button");
-    await B.click(".chat-head button");
+    await A.click('[data-testid="tab-room"]');
+    await B.click('[data-testid="tab-room"]');
+
+    const turnTexts = await Promise.all(pages.map((p) => p.textContent('[data-testid="turn-text"]')));
+    const turnIdx = turnTexts.findIndex((t) => t?.trim() === id.table.yourTurn);
+    check(turnIdx >= 0, "ada tepat satu pemain yang gilirannya");
+    const nudger = pages[(turnIdx + 1) % 4] as Page;
+    await nudger.click('[data-testid="nudge"]');
+    const target = pages[turnIdx] as Page;
+    await target.waitForFunction(() => /menyundulmu/.test(document.querySelector(".toast")?.textContent ?? ""));
+    check(true, "pemain yang ditunggu menerima sundulan (toast 'menyundulmu')");
+    await nudger.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="nudge"]')?.disabled === true);
+    check(true, "tombol Colek masuk jeda tunggu setelah dipakai");
+
+    // Tab lain: Games dan Profil
+    await C.click('[data-testid="tab-games"]');
+    await noHorizontalOverflow(C, "tab games (di dalam room)");
+    await shot(C, "07-games");
+    await C.click('[data-testid="tab-profile"]');
+    await noHorizontalOverflow(C, "tab profil");
+    await shot(C, "08-profil");
+    await C.click('[data-testid="tab-room"]');
 
     // 5. Main; Dewi refresh di tengah game dan kembali dengan kartu yang sama
     let refreshed = false;

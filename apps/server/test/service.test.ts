@@ -576,3 +576,50 @@ describe("pembatas laju chat", () => {
     expect(conns[1]!.msgs.filter((m) => m.type === "chat")).toHaveLength(4);
   });
 });
+
+describe("sundul teman (nudge)", () => {
+  function turnSeats(h: Harness, roomId: string): { turn: number; other: number } {
+    const r = room(h, roomId);
+    const turn = r.game!.roomSeats[r.game!.state.turn]!;
+    return { turn, other: [0, 1, 2].find((s) => s !== turn)! };
+  }
+
+  it("menyundul pemain yang sedang ditunggu: target menerima nudge, pengirim menerima ack; tidak masuk log maupun peristiwa", () => {
+    const h = harness();
+    const { conns, roomId } = table(h, 3);
+    const { turn, other } = turnSeats(h, roomId);
+    const logBefore = h.log.readAll().length;
+    const eventsBefore = h.events.events.length;
+    send(h, conns[other]!, { type: "nudge" });
+    expect(conns[turn]!.msgs.at(-1)).toEqual({ type: "nudge", fromSeat: other, fromName: `P${other}` });
+    expect(conns[other]!.msgs.at(-1)).toEqual({ type: "nudge_ack", seat: turn, name: `P${turn}` });
+    expect(h.log.readAll()).toHaveLength(logBefore);
+    expect(h.events.events).toHaveLength(eventsBefore);
+    const third = [0, 1, 2].find((s) => s !== turn && s !== other)!;
+    expect(conns[third]!.msgs.some((m) => m.type === "nudge")).toBe(false);
+  });
+
+  it("ditolak: giliran sendiri, belum ada game, dibatasi jeda, target terputus", () => {
+    const h = harness({ nudgeIntervalMs: 10_000 });
+    const lobby = table(h, 2, false);
+    send(h, lobby.conns[0]!, { type: "nudge" });
+    expect(lobby.conns[0]!.lastError()?.code).toBe("NOT_PLAYING");
+
+    const { conns, roomId } = table(h, 3);
+    const { turn, other } = turnSeats(h, roomId);
+    send(h, conns[turn]!, { type: "nudge" });
+    expect(conns[turn]!.lastError()?.code).toBe("SELF_TURN");
+    send(h, conns[other]!, { type: "nudge" });
+    send(h, conns[other]!, { type: "nudge" });
+    expect(conns[other]!.lastError()?.code).toBe("RATE_LIMITED");
+    expect(conns[turn]!.msgs.filter((m) => m.type === "nudge")).toHaveLength(1);
+    h.clock.advance(10_000);
+    send(h, conns[other]!, { type: "nudge" });
+    expect(conns[turn]!.msgs.filter((m) => m.type === "nudge")).toHaveLength(2);
+
+    h.clock.advance(10_000);
+    h.svc.onDisconnect(conns[turn]!);
+    send(h, conns[other]!, { type: "nudge" });
+    expect(conns[other]!.lastError()?.code).toBe("NOT_CONNECTED");
+  });
+});

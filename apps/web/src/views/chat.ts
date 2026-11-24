@@ -1,6 +1,7 @@
 import { id } from "../i18n/id";
 import { clear, h } from "../dom";
 import { CHAT_MAX, ChatLimiter, cleanText } from "../logic";
+import { avatar } from "./avatar";
 
 export interface ChatLine {
   seat: number;
@@ -9,33 +10,31 @@ export interface ChatLine {
   mine: boolean;
 }
 
-/** Panel chat sebagai lapisan yang bisa dibuka dan ditutup; tidak menutupi meja saat tertutup. Semua teks lewat node teks. */
+/** Chat sebagai isi tab. Riwayat bertahan selama room yang sama; semua teks lewat node teks (tanpa HTML). */
 export class ChatPanel {
-  readonly button: HTMLButtonElement;
-  readonly sheet: HTMLElement;
+  readonly view: HTMLElement;
+  private readonly head: HTMLElement;
   private readonly list: HTMLUListElement;
   private readonly input: HTMLInputElement;
   private readonly note: HTMLElement;
-  private readonly badge: HTMLElement;
   private lines: ChatLine[] = [];
   private unread = 0;
-  private isOpen = false;
+  private active = false;
   private readonly limiter = new ChatLimiter();
 
   constructor(
     private readonly send: (text: string) => boolean,
+    private readonly onUnreadChange: () => void = () => undefined,
     private readonly now: () => number = () => Date.now(),
   ) {
-    this.badge = h("span", { class: "badge", hidden: true, "aria-hidden": "true" });
-    this.button = h("button", { class: "icon-btn", type: "button", "data-testid": "chat-toggle", "aria-expanded": "false", "aria-controls": "chat-panel", onclick: () => this.setOpen(!this.isOpen) }, h("span", { class: "icon-label" }, id.chat.title), this.badge);
-    this.button.setAttribute("aria-label", id.chat.open);
+    this.head = h("div", { class: "chat-head" });
     this.list = h("ul", { class: "chat-log", "aria-live": "polite", "data-testid": "chat-log" });
     this.input = h("input", { class: "input", type: "text", maxlength: CHAT_MAX, placeholder: id.chat.placeholder, "aria-label": id.chat.placeholder, autocomplete: "off", "data-testid": "chat-input" });
     this.note = h("p", { class: "hint bad", role: "status" });
-    this.sheet = h(
+    this.view = h(
       "section",
-      { class: "chat", id: "chat-panel", role: "dialog", "aria-label": id.chat.title, hidden: true },
-      h("div", { class: "chat-head" }, h("strong", {}, id.chat.title), h("button", { class: "btn small", type: "button", "aria-label": id.chat.close, onclick: () => this.setOpen(false) }, id.chat.close)),
+      { class: "chat-view" },
+      this.head,
       this.list,
       this.note,
       h(
@@ -51,8 +50,14 @@ export class ChatPanel {
         h("button", { class: "btn primary", type: "submit", "data-testid": "chat-send" }, id.chat.send),
       ),
     );
+    this.setHeader(null, 0);
     this.renderLog();
-    this.renderBadge();
+  }
+
+  setHeader(groupId: string | null, members: number): void {
+    clear(this.head);
+    this.head.append(h("strong", {}, groupId ? id.chat.groupTitle(groupId) : id.chat.title));
+    if (groupId) this.head.append(h("span", { class: "muted" }, id.chat.members(members)));
   }
 
   private submit(): void {
@@ -73,25 +78,27 @@ export class ChatPanel {
   add(line: ChatLine): void {
     this.lines.push({ ...line, text: cleanText(line.text) });
     if (this.lines.length > 200) this.lines.shift();
-    if (!this.isOpen && !line.mine) this.unread++;
+    if (!this.active && !line.mine) {
+      this.unread++;
+      this.onUnreadChange();
+    }
     this.renderLog();
-    this.renderBadge();
   }
 
-  setOpen(open: boolean): void {
-    this.isOpen = open;
-    this.sheet.hidden = !open;
-    this.button.setAttribute("aria-expanded", String(open));
-    if (open) {
-      this.unread = 0;
-      this.renderBadge();
-      this.input.focus();
+  /** Dipanggil saat tab Chat dibuka atau ditinggalkan. */
+  setActive(active: boolean): void {
+    this.active = active;
+    if (active) {
+      if (this.unread > 0) {
+        this.unread = 0;
+        this.onUnreadChange();
+      }
       this.list.scrollTop = this.list.scrollHeight;
     }
   }
 
-  get open(): boolean {
-    return this.isOpen;
+  focusInput(): void {
+    this.input.focus();
   }
 
   get unreadCount(): number {
@@ -101,25 +108,21 @@ export class ChatPanel {
   reset(): void {
     this.lines = [];
     this.unread = 0;
-    this.setOpen(false);
+    this.setHeader(null, 0);
     this.renderLog();
-    this.renderBadge();
-  }
-
-  private renderBadge(): void {
-    this.badge.hidden = this.unread === 0;
-    this.badge.textContent = this.unread > 9 ? "9+" : String(this.unread);
-    this.button.setAttribute("aria-label", this.unread > 0 ? `${id.chat.open}. ${id.chat.unread(this.unread)}` : id.chat.open);
+    this.onUnreadChange();
   }
 
   private renderLog(): void {
     clear(this.list);
     if (this.lines.length === 0) {
-      this.list.appendChild(h("li", { class: "muted" }, id.chat.empty));
+      this.list.appendChild(h("li", { class: "muted center" }, id.chat.empty));
       return;
     }
     for (const l of this.lines) {
-      this.list.appendChild(h("li", { class: l.mine ? "msg mine" : "msg" }, h("strong", {}, l.name), ": ", l.text));
+      this.list.appendChild(
+        h("li", { class: l.mine ? "bubble mine" : "bubble" }, l.mine ? null : avatar(l.name, l.seat, "sm"), h("div", { class: "bubble-body" }, l.mine ? null : h("strong", {}, l.name), h("span", {}, l.text))),
+      );
     }
     this.list.scrollTop = this.list.scrollHeight;
   }
