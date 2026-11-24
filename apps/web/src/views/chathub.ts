@@ -17,6 +17,8 @@ export interface HubDeps {
   toRoom: () => void;
   toGames: () => void;
   toProfile: () => void;
+  /** Pengguna tamu (belum punya akun). */
+  isGuest: () => boolean;
   onUnread: () => void;
   now?: () => number;
 }
@@ -190,6 +192,9 @@ export class ChatHub {
         h("span", { class: `pill${connected ? " ok" : ""}`, role: "status" }, h("span", { class: `dot ${connected ? "on" : "off"}`, "aria-hidden": "true" }), connected ? id.chat.connOnline : id.chat.connOffline),
         h("button", { type: "button", class: "me-btn", "aria-label": id.tabs.profile, "data-testid": "me-btn", onclick: this.d.toProfile }, avatar(myName || id.chat.me, 0, "md")),
       ),
+      rows.length > 0 && this.d.isGuest()
+        ? h("div", { class: "signup-banner", "data-testid": "signup-banner" }, h("span", {}, id.account.bannerText), h("button", { type: "button", class: "btn small primary", onclick: this.d.toProfile }, id.account.bannerBtn))
+        : null,
       rows.length > 0
         ? h("div", { class: "cl-rows" }, rows)
         : h("div", { class: "cl-empty" }, h("h2", {}, id.chat.listEmptyTitle), h("p", { class: "hint" }, id.chat.listEmptyBody)),

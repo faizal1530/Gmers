@@ -261,6 +261,61 @@ async function main(): Promise<void> {
     const total2 = await playUntilDone(pages);
     log(`game 2 selesai dalam ${total2} langkah`);
 
+    // 7. Akun: daftar, tetap masuk setelah muat ulang, masuk dari perangkat lain, room tetap di daftar
+    const extra = async (): Promise<Page> => {
+      const ctx = await browser.newContext({ viewport: { width: 360, height: 740 }, deviceScaleFactor: 2, locale: "id-ID" });
+      contexts.push(ctx);
+      const page = await ctx.newPage();
+      page.on("pageerror", (e) => problems.push(`pageerror[akun]: ${e.message}`));
+      page.on("console", (m) => {
+        // 401 dari percobaan kata sandi salah yang sengaja diuji dicatat Chromium sebagai galat konsol; itu bukan masalah.
+        if (m.type() === "error" && !/status of 401/.test(m.text())) problems.push(`console.error[akun]: ${m.text()}`);
+      });
+      page.on("request", (r) => {
+        const u = new URL(r.url());
+        if (!["127.0.0.1", "localhost"].includes(u.hostname) && u.protocol.startsWith("http")) external.push(r.url());
+      });
+      return page;
+    };
+    const E = await extra();
+    await E.goto(base);
+    await E.fill("#nama", "Eka");
+    await E.click("button[type=submit]");
+    await E.waitForSelector('[data-testid="share-url"]');
+    const eCode = (await E.textContent('[data-testid="group-code"]'))?.trim() ?? "";
+    await E.click('[data-testid="tab-profile"]');
+    await noHorizontalOverflow(E, "profil tamu");
+    await shot(E, "09-profil-tamu");
+    await E.fill("#akun-user", "eka_e2e");
+    await E.fill("#akun-pass", "rahasia-e2e-123");
+    await E.click('[data-testid="account-submit"]');
+    await E.waitForSelector('[data-testid="account-user"]');
+    check(((await E.textContent('[data-testid="account-user"]')) ?? "").includes("@eka_e2e"), "daftar akun berhasil: 'Masuk sebagai @eka_e2e'");
+    await noHorizontalOverflow(E, "profil dengan akun");
+    await shot(E, "10-profil-akun");
+    await E.reload();
+    await E.click('[data-testid="tab-profile"]');
+    await E.waitForSelector('[data-testid="account-user"]');
+    check((await E.locator("#akun-user").count()) === 0, "setelah muat ulang tetap masuk (tanpa formulir masuk)");
+
+    const F = await extra(); // perangkat lain
+    await F.goto(base);
+    await F.click('[data-testid="tab-profile"]');
+    await F.click('[data-mode="login"]');
+    await F.fill("#akun-user", "eka_e2e");
+    await F.fill("#akun-pass", "salah-sekali");
+    await F.click('[data-testid="account-submit"]');
+    await F.waitForSelector(".hint.bad");
+    check(((await F.textContent(".hint.bad")) ?? "").includes("salah"), "kata sandi salah ditolak dengan pesan");
+    await F.fill("#akun-pass", "rahasia-e2e-123");
+    await Promise.all([F.waitForNavigation({ waitUntil: "load" }).catch(() => undefined), F.click('[data-testid="account-submit"]')]);
+    await F.click('[data-testid="tab-profile"]');
+    await F.waitForSelector('[data-testid="account-user"]');
+    await F.click('[data-testid="tab-chat"]');
+    await F.waitForSelector('[data-testid="convo"]');
+    check(((await F.getAttribute('[data-testid="convo"]', "data-group")) ?? "") === eCode, "masuk dari perangkat lain: room akun tampil di daftar chat");
+    await shot(F, "11-chat-perangkat-lain");
+
     // 7. Tidak ada galat konsol, tidak ada permintaan ke pihak ketiga
     check(problems.length === 0, `tanpa galat konsol/halaman${problems.length ? `: ${problems.join(" | ")}` : ""}`);
     check(external.length === 0, `tanpa permintaan ke pihak ketiga${external.length ? `: ${external.join(", ")}` : ""}`);

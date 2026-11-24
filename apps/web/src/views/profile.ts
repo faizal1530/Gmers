@@ -2,9 +2,11 @@ import { id } from "../i18n/id";
 import { h } from "../dom";
 import { checkName } from "../logic";
 import type { ThemeMode } from "../theme";
+import { accountView, type AccountViewOptions } from "./account";
 import { avatar } from "./avatar";
 
 export interface ProfileOptions {
+  account: AccountViewOptions;
   name: string;
   theme: ThemeMode;
   soundOn: boolean;
@@ -24,6 +26,7 @@ export function profileView(o: ProfileOptions): HTMLElement {
     "section",
     { class: "stack" },
     h("h1", {}, p.title),
+    accountView(o.account),
     h(
       "div",
       { class: "panel" },

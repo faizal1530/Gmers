@@ -1,6 +1,7 @@
 import type { ServerMessage, StateMessage } from "@gmers/server/protocol";
 import type { SocketLike } from "../src/net";
 import { App } from "../src/app";
+import type { Api } from "../src/api";
 import type { KV } from "../src/storage";
 import type { SoundLike, SoundName } from "../src/sound";
 
@@ -64,17 +65,21 @@ export interface Harness {
   kv: ReturnType<typeof memoryKV>;
   sock(): FakeSocket;
   copied: string[];
+  reloads: { n: number };
 }
 
-export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean } = {}): Harness {
+export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean; fetch?: ConstructorParameters<typeof Api>[1] } = {}): Harness {
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState(null, "", path);
   const root = document.getElementById("app") as HTMLElement;
   const sockets: FakeSocket[] = [];
   const copied: string[] = [];
   const sound = new FakeSound();
+  const reloads = { n: 0 };
   const app = new App({
     sound,
+    fetch: opts.fetch,
+    reload: () => void reloads.n++,
     root,
     kv,
     origin: "https://gmers.test",
@@ -90,7 +95,7 @@ export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean } = 
     },
   });
   app.start();
-  return { app, root, sockets, kv, sound, sock: () => sockets[sockets.length - 1] as FakeSocket, copied };
+  return { app, root, sockets, kv, sound, reloads, sock: () => sockets[sockets.length - 1] as FakeSocket, copied };
 }
 
 type Seat = { name: string; connected?: boolean; cardsLeft?: number | null };
@@ -148,3 +153,36 @@ export const q = <T extends Element = HTMLElement>(root: ParentNode, sel: string
   if (!el) throw new Error(`Elemen tidak ditemukan: ${sel}`);
   return el;
 };
+
+export interface FakeRes {
+  status?: number;
+  json?: unknown;
+  /** Lempar galat jaringan. */
+  fail?: boolean;
+}
+export type RouteFn = (body: Record<string, unknown>, headers: Record<string, string>) => FakeRes;
+
+/** fetch palsu dengan rute `METODE /jalur`; mencatat semua panggilan. */
+export function fakeFetch(routes: Record<string, RouteFn>) {
+  const calls: { route: string; body: Record<string, unknown>; headers: Record<string, string> }[] = [];
+  const fn = async (input: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+    const route = `${init?.method ?? "GET"} ${input}`;
+    const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+    const headers = init?.headers ?? {};
+    calls.push({ route, body, headers });
+    const h = routes[route];
+    const r: FakeRes = h ? h(body, headers) : { status: 404, json: { code: "NOT_FOUND", message: "Tidak ditemukan." } };
+    if (r.fail) throw new Error("jaringan putus");
+    return { status: r.status ?? 200, json: async () => r.json ?? {} };
+  };
+  return { fn, calls };
+}
+
+export const acct = (over: Record<string, unknown> = {}) => ({
+  username: "andi",
+  name: "Andi",
+  token: "token-akun-andi-0000000001",
+  prefs: {},
+  groups: [],
+  ...over,
+});

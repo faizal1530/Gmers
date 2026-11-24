@@ -106,6 +106,20 @@ Memulai ulang **aman**: room dan game yang sedang berjalan dibangun kembali dari
 
 Server tidak menulis nama, isi chat, nomor HP, atau alamat IP ke log mana pun.
 
+## 5b. Akun pengguna (opsional bagi pemain)
+
+Pemain boleh mendaftar (nama pengguna + kata sandi). Datanya ada di `/data/accounts.jsonl` (nama pengguna, hash kata sandi, nama panggilan, pengaturan, daftar room). **Berkas ini tidak bisa dibuat ulang**, jadi masukkan ke cadangan rutin bersama `events.csv` (snapshot Volume, atau salin berkas). Tanpa email, kata sandi yang lupa diatur ulang oleh Anda:
+
+```bash
+curl -X POST https://ALAMAT/admin/accounts/reset \
+  -H "Authorization: Bearer TOKEN" -H "content-type: application/json" \
+  -d '{"username":"andi","newPassword":"KATA-SANDI-SEMENTARA-BARU"}'
+```
+
+Perintah itu mengganti kata sandi dan mengeluarkan akun itu dari semua perangkat; sampaikan kata sandi sementara ke pemilik lewat jalur pribadi dan minta dia menggantinya di tab Profil. (Kata sandi akan tertulis di riwayat shell; hapus riwayatnya, atau ketik dengan spasi di depan perintah bila shell Anda mengabaikan baris berawalan spasi.)
+
+Sesi masuk tidak kedaluwarsa (seperti WhatsApp). Mengatur batas masa berlaku: `sessionTtlMs` di `apps/server/src/config.ts`.
+
 ## 6. Mengekspor CSV peristiwa
 
 Ganti `ALAMAT` dengan alamat situs dan `TOKEN` dengan nilai `ADMIN_TOKEN`:

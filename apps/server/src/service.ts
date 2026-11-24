@@ -73,6 +73,8 @@ export interface ServiceDeps {
   /** Pembangkit kode kelompok. */
   newGroupId?: () => string;
   newSeed?: () => string;
+  /** Dipanggil saat sebuah perangkat duduk di kelompok (untuk daftar room akun). */
+  onSeat?: (tokenHash: string, groupId: string) => void;
 }
 
 const ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -99,6 +101,7 @@ export class RoomService {
   private readonly events: EventSink;
   private readonly newGroupId: () => string;
   private readonly newSeed: () => string;
+  private readonly onSeat: ((tokenHash: string, groupId: string) => void) | undefined;
   private cancelSweep: (() => void) | null = null;
   private stopped = false;
 
@@ -110,7 +113,15 @@ export class RoomService {
     this.log = deps.log ?? new MemoryRoomLog();
     this.events = deps.events ?? new NoopEventSink();
     this.newGroupId = deps.newGroupId ?? defaultRoomId;
+    this.onSeat = deps.onSeat;
     this.newSeed = deps.newSeed ?? (() => randomBytes(12).toString("hex"));
+  }
+
+  /** Kelompok yang sedang diduduki sebuah perangkat (untuk menyertakannya saat mendaftar akun). */
+  groupsOf(tokenHash: string): string[] {
+    const out: string[] = [];
+    for (const room of this.rooms.values()) if (room.seats.some((m) => m?.tokenHash === tokenHash)) out.push(room.groupId);
+    return out;
   }
 
   // ---------- siklus hidup ----------
@@ -579,6 +590,7 @@ export class RoomService {
     this.append({ t: "sit", roomId: room.id, ts: this.clock.now(), seat, tokenHash, name });
     this.bind(conn, room, member);
     this.emit(room, "player_joined", tokenHash, `seat=${seat}`);
+    this.onSeat?.(tokenHash, room.groupId);
     this.broadcast(room);
   }
 

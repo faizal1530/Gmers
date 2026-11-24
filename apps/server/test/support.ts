@@ -10,7 +10,7 @@ import type { Conn } from "../src/service";
 export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
   // Tiap konfigurasi uji memakai folder data sendiri agar log antar uji tidak bercampur.
   const dataDir = mkdtempSync(join(tmpdir(), "gmers-test-"));
-  return { ...defaultServerConfig, port: 0, host: "127.0.0.1", eventsCsvFile: null, dataDir, ...overrides };
+  return { ...defaultServerConfig, port: 0, host: "127.0.0.1", eventsCsvFile: null, dataDir, passwordCost: 1024, ...overrides };
 }
 
 export function tok(i: number | string): string {

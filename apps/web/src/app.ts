@@ -1,11 +1,12 @@
 import type { Card } from "@gmers/game-engine";
 import type { ClientMessage, ServerMessage, StateMessage } from "@gmers/server/protocol";
+import { Api, type AccountInfo } from "./api";
 import { clear, h } from "./dom";
 import { id } from "./i18n/id";
-import { cardKey, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
+import { cardKey, checkName, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
 import { GameClient, type ConnStatus, type SocketLike } from "./net";
 import { SoundPlayer, haptic, type SoundLike } from "./sound";
-import { Identity, createKV, type KV } from "./storage";
+import { Identity, createKV, randomToken, type KV } from "./storage";
 import { applyTheme, readTheme, type ThemeMode } from "./theme";
 import { ChatStore, type StoredMsg } from "./chatstore";
 import { ChatHub } from "./views/chathub";
@@ -34,6 +35,9 @@ export interface AppDeps {
   copy?: (text: string) => Promise<boolean>;
   origin?: string;
   sound?: SoundLike;
+  fetch?: ConstructorParameters<typeof Api>[1];
+  /** Muat ulang halaman (dipakai saat identitas berganti). Uji mengganti ini. */
+  reload?: () => void;
 }
 
 const NUDGE_COOLDOWN_MS = 10_000;
@@ -82,6 +86,8 @@ export class App {
   private readonly store: ChatStore;
   private readonly hub: ChatHub;
   private readonly sound: SoundLike;
+  private readonly api: Api;
+  private account: { username: string } | null = null;
   private client: GameClient | null = null;
   private route: Route = { kind: "home" };
   private tab: Tab = "games";
@@ -117,6 +123,7 @@ export class App {
     this.kv = deps.kv ?? createKV();
     this.identity = new Identity(this.kv);
     this.sound = deps.sound ?? new SoundPlayer(this.kv);
+    this.api = new Api(() => this.identity.session(), deps.fetch);
     this.copy = deps.copy ?? defaultCopy;
     this.origin = deps.origin ?? window.location.origin;
     this.wsUrl = deps.wsUrl ?? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
@@ -131,6 +138,7 @@ export class App {
       toRoom: () => this.selectTab("room"),
       toGames: () => this.selectTab("games"),
       toProfile: () => this.selectTab("profile"),
+      isGuest: () => this.account === null,
       onUnread: () => this.renderNav(),
     });
     this.header = h("header", { class: "top" });
@@ -145,13 +153,6 @@ export class App {
     this.theme = readTheme(this.kv);
     applyTheme(this.theme);
     this.route = parseRoute(window.location.pathname);
-    if (this.route.kind === "link") {
-      this.tab = "room";
-      this.intent = { kind: "open", groupId: this.route.groupId };
-      this.ensureClient();
-    } else if (this.route.kind === "privacy") {
-      this.tab = "profile";
-    }
     // Kebijakan putar-otomatis peramban: buka kunci audio pada gestur pertama.
     const unlock = (): void => this.sound.unlock();
     document.addEventListener("pointerdown", unlock, { once: true });
@@ -161,7 +162,109 @@ export class App {
       this.route = parseRoute(window.location.pathname);
       this.render(true);
     });
+    const session = this.identity.session();
+    if (!session) {
+      this.afterBoot();
+      return;
+    }
+    // Sudah pernah masuk: tetap masuk sampai pengguna sendiri memilih keluar.
+    const cached = this.identity.cachedAccount();
+    if (cached) this.account = { username: cached.username };
     this.render(true);
+    void this.api.me().then((r) => {
+      if (r.ok) this.applyAccount(r.data.account);
+      else if (r.status === 401) {
+        // Sesi dicabut (admin reset atau kata sandi diganti di perangkat lain).
+        this.identity.setSession(null);
+        this.identity.setCachedAccount(null);
+        this.account = null;
+      } // galat jaringan atau server: tetap masuk dengan data yang tersimpan
+      this.afterBoot();
+    });
+  }
+
+  private afterBoot(): void {
+    if (this.route.kind === "link") {
+      this.tab = "room";
+      this.intent = { kind: "open", groupId: this.route.groupId };
+      this.ensureClient();
+    } else if (this.route.kind === "privacy") {
+      this.tab = "profile";
+    }
+    this.render(true);
+  }
+
+  /** Terapkan data akun dari server. Mengembalikan true bila identitas room berganti. */
+  private applyAccount(acc: AccountInfo): boolean {
+    const changed = this.identity.token() !== acc.token;
+    if (changed) this.identity.setToken(acc.token);
+    this.identity.setName(acc.name);
+    this.identity.setCachedAccount({ username: acc.username, name: acc.name });
+    this.account = { username: acc.username };
+    if (acc.prefs.theme) {
+      this.theme = acc.prefs.theme;
+      applyTheme(this.theme, this.kv);
+    }
+    if (acc.prefs.sound !== undefined) this.sound.setEnabled(acc.prefs.sound);
+    for (const g of acc.groups) this.store.ensureStub(g.groupId, g.ts);
+    this.hub.refresh();
+    this.renderNav();
+    return changed;
+  }
+
+  private reload(): void {
+    (this.deps.reload ?? (() => window.location.reload()))();
+  }
+
+  private async doRegister(username: string, password: string): Promise<string | null> {
+    const nm = checkName(this.identity.name() ?? "");
+    const r = await this.api.register({ username: username.trim(), password, name: nm.ok ? nm.name : undefined, token: this.identity.token() });
+    if (!r.ok) return r.message;
+    this.identity.setSession(r.data.session);
+    const changed = this.applyAccount(r.data.account);
+    this.showToast(id.account.created);
+    if (changed && this.client) this.reload();
+    this.render(true);
+    return null;
+  }
+
+  private async doLogin(username: string, password: string): Promise<string | null> {
+    const r = await this.api.login({ username: username.trim(), password });
+    if (!r.ok) return r.message;
+    this.identity.setSession(r.data.session);
+    const changed = this.applyAccount(r.data.account);
+    this.showToast(id.account.welcome(r.data.account.name));
+    if (changed && (this.client || this.room)) this.reload();
+    this.render(true);
+    return null;
+  }
+
+  /** Bersihkan data akun dari perangkat ini dan jadi tamu baru (identitas room baru). */
+  private async leaveAccount(): Promise<void> {
+    this.identity.setSession(null);
+    this.identity.setCachedAccount(null);
+    this.identity.setToken(randomToken());
+    this.account = null;
+    this.store.clear();
+    this.reload();
+  }
+
+  private async doLogout(): Promise<void> {
+    await this.api.logout();
+    await this.leaveAccount();
+  }
+
+  private async doDelete(password: string): Promise<string | null> {
+    const r = await this.api.deleteAccount({ password });
+    if (!r.ok) return r.message;
+    await this.leaveAccount();
+    return null;
+  }
+
+  private async doChangePassword(oldPassword: string, newPassword: string): Promise<string | null> {
+    if (newPassword.length < 8) return id.account.pwShort;
+    const r = await this.api.changePassword({ oldPassword, newPassword });
+    return r.ok ? null : r.message;
   }
 
   stop(): void {
@@ -538,7 +641,7 @@ export class App {
       case "chat":
         return "chat";
       case "profile":
-        return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}`;
+        return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}:${this.account?.username ?? ""}`;
     }
   }
 
@@ -576,10 +679,21 @@ export class App {
         return this.hub.view;
       case "profile":
         return profileView({
+          account: {
+            username: this.account?.username ?? null,
+            onRegister: (u, p) => this.doRegister(u, p),
+            onLogin: (u, p) => this.doLogin(u, p),
+            onLogout: () => void this.doLogout(),
+            onChangePassword: (o, n) => this.doChangePassword(o, n),
+            onDelete: (p) => this.doDelete(p),
+          },
           name: this.identity.name() ?? "",
           theme: this.theme,
           soundOn: this.sound.enabled,
-          onSaveName: (n) => this.identity.setName(n),
+          onSaveName: (n) => {
+            this.identity.setName(n);
+            if (this.account) void this.api.updateProfile({ name: n });
+          },
           onClearChats: () => {
             this.store.clear();
             this.hub.showList();
@@ -589,10 +703,12 @@ export class App {
           onTheme: (mode) => {
             this.theme = mode;
             applyTheme(mode, this.kv);
+            if (this.account) void this.api.updateProfile({ prefs: { theme: mode } });
             this.render(true);
           },
           onSound: (on) => {
             this.sound.setEnabled(on);
+            if (this.account) void this.api.updateProfile({ prefs: { sound: on } });
             if (on) this.sound.play("turn");
             this.render(true);
           },

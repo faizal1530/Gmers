@@ -95,6 +95,13 @@ export class ChatStore {
     return c;
   }
 
+  /** Percakapan kosong untuk room yang diketahui server (mis. dari akun di perangkat lain). */
+  ensureStub(groupId: string, ts: number): void {
+    if (this.get(groupId)) return;
+    this.convos.push({ groupId, me: -1, members: [], lastTs: ts, unread: 0, msgs: [] });
+    this.save();
+  }
+
   add(groupId: string, msg: StoredMsg, countUnread: boolean): void {
     const c = this.get(groupId);
     if (!c) return;

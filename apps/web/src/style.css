@@ -328,3 +328,12 @@ a { color: var(--accent); }
 .hero.won .crown { color: #1b1300; }
 .rank.r2 .rank-n { background: #8d9aa0; } .rank.r3 .rank-n { background: #a8683a; }
 .rank.first .rank-n { background: #1b1300; color: var(--gold); }
+
+/* ===== Akun ===== */
+.field { display: flex; flex-direction: column; gap: 4px; }
+.acc-user { font-weight: 800; font-size: 1.05rem; }
+.fold { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+.fold summary { font-weight: 700; cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.btn.danger { background: var(--coral); border-color: var(--coral); color: #fff; }
+.signup-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--soft); border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; font-size: 0.9rem; }
+.signup-banner span { min-width: 0; }

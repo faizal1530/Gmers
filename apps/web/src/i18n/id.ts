@@ -1,7 +1,7 @@
 /** Semua teks yang dilihat pengguna ada di sini (Bahasa Indonesia). */
 export const id = {
   appName: "Gmers",
-  tagline: "Main Gaple bareng teman. Cukup satu tautan, tanpa instal dan tanpa akun.",
+  tagline: "Main Gaple bareng teman. Cukup satu tautan, tanpa instal. Akun opsional.",
 
   tabs: {
     label: "Navigasi utama",
@@ -38,6 +38,42 @@ export const id = {
     pasteBad: "Tautan atau kodenya tidak dikenali.",
   },
 
+  account: {
+    title: "Akun",
+    guestIntro: "Daftar supaya nama, pengaturan, dan daftar room-mu tersimpan di server dan ikut ke perangkat lain. Kamu tetap masuk sampai kamu sendiri memilih keluar.",
+    tabRegister: "Daftar",
+    tabLogin: "Masuk",
+    username: "Nama pengguna",
+    usernameHint: "3 sampai 20 karakter: huruf, angka, titik, atau garis bawah.",
+    password: "Kata sandi",
+    passwordHint: "Minimal 8 karakter.",
+    register: "Daftar",
+    registering: "Mendaftar...",
+    login: "Masuk",
+    loggingIn: "Masuk...",
+    loggedAs: (u: string) => `Masuk sebagai @${u}`,
+    dataNote: "Yang tersimpan di server: nama panggilan, pengaturan, dan daftar room. Isi chat tidak disimpan di server. Kamu tetap masuk sampai memilih keluar.",
+    logout: "Keluar",
+    logoutAsk: "Keluar dari akun ini di perangkat ini? Riwayat chat di perangkat ini juga dihapus.",
+    logoutYes: "Ya, keluar",
+    cancel: "Batal",
+    changeTitle: "Ubah kata sandi",
+    oldPassword: "Kata sandi lama",
+    newPassword: "Kata sandi baru",
+    change: "Ubah",
+    changed: "Kata sandi diubah. Perangkat lain perlu masuk lagi.",
+    deleteTitle: "Hapus akun",
+    deleteWarn: "Akun dan datanya di server dihapus permanen, dan riwayat chat di perangkat ini ikut dihapus.",
+    deletePassword: "Masukkan kata sandi untuk konfirmasi",
+    deleteGo: "Hapus akun saya",
+    created: "Akun dibuat. Datamu sekarang tersimpan.",
+    welcome: (n: string) => `Selamat datang, ${n}`,
+    network: "Tidak bisa terhubung ke server. Periksa internetmu lalu coba lagi.",
+    pwShort: "Kata sandi baru minimal 8 karakter.",
+    bannerText: "Daftar supaya room dan profilmu tersimpan di server.",
+    bannerBtn: "Daftar",
+  },
+
   profile: {
     title: "Profil",
     nameLabel: "Nama panggilan",
@@ -56,7 +92,7 @@ export const id = {
     themeLight: "Terang",
     themeDark: "Gelap",
     aboutTitle: "Tentang",
-    about: "Gmers: main Gaple bareng teman. Tanpa akun, tanpa nomor HP. Perangkat ini dikenali lewat kode acak di peramban.",
+    about: "Gmers: main Gaple bareng teman. Akun opsional dan tanpa nomor HP atau email. Perangkat ini dikenali lewat kode acak di peramban.",
     privacy: "Kebijakan privasi",
   },
 
@@ -249,7 +285,15 @@ export const id = {
       },
       {
         heading: "Yang tidak kami kumpulkan",
-        items: ["Nomor HP, email, lokasi, kontak, dan alamat IP tidak dicatat. Tidak ada akun dan tidak ada iklan."],
+        items: ["Nomor HP, email, lokasi, kontak, dan alamat IP tidak dicatat. Tidak ada iklan."],
+      },
+      {
+        heading: "Jika kamu mendaftar akun (opsional)",
+        items: [
+          "Disimpan di server: nama pengguna, kata sandi dalam bentuk hash (bukan kata sandi aslinya), nama panggilan, pengaturan tampilan dan suara, dan daftar room yang pernah kamu masuki.",
+          "Isi chat tetap tidak disimpan di server. Akun tersimpan sampai kamu menghapusnya di tab Profil.",
+          "Tanpa email, kata sandi yang lupa hanya bisa diatur ulang oleh pengelola layanan.",
+        ],
       },
       {
         heading: "Untuk apa",

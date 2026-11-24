@@ -7,7 +7,7 @@ Pekerjaan saat ini adalah **MVP Room Web (Gaple)**. Baca `00-INDEKS-HANDOVER.md`
 
 ## Struktur repo MVP (Tahap A sampai D selesai)
 - `packages/game-engine`: mesin Gaple (TS murni, tanpa I/O). Aturan hanya lewat parameter `GapleConfig`; `Math.random` dan `Date.now` dilarang di `src` (ESLint).
-- `apps/server`: satu proses Node (`ws`), room di memori, log JSONL (`DATA_DIR`), `EventSink` CSV, menyajikan `apps/web/dist`, ekspor `/admin/events.csv` (`ADMIN_TOKEN`), `/healthz`. Kode di tautan = `group_id` kelompok yang tidak pernah kedaluwarsa.
+- `apps/server`: satu proses Node (`ws`), akun opsional (nama pengguna + kata sandi scrypt, sesi permanen, `accounts.jsonl`; keputusan Faizal 24 Nov, menggantikan "tanpa akun" di handover; tanpa email dan nomor HP), room di memori, log JSONL (`DATA_DIR`), `EventSink` CSV, menyajikan `apps/web/dist`, ekspor `/admin/events.csv` (`ADMIN_TOKEN`), `/healthz`. Kode di tautan = `group_id` kelompok yang tidak pernah kedaluwarsa.
 - `apps/web`: klien Vite + TypeScript tanpa kerangka, dengan tab bawah Games/Room/Chat/Profil. Semua teks pengguna di `src/i18n/id.ts`. Suara sintetis di `src/sound.ts`. E2E Chromium di `e2e/run.ts`.
 - `scripts`: `pnpm hitung events.csv` (penghitung kelompok aktif) dan uji sistem.
 - Perintah: `pnpm verify` (lint, tipe, uji, E2E), `pnpm build`, `pnpm hitung`. Deploy: `Dockerfile` dan `docs/DEPLOY.md`. Ringkasan dan daftar tindakan: `docs/LAPORAN-MVP.md`. Untuk MVP abaikan `apps/mobile`, `packages/shared`, `infra`, Postgres/Redis/Expo di bagian Teknologi.

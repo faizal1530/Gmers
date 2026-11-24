@@ -35,6 +35,8 @@ export function randomToken(): string {
 
 const TOKEN_KEY = "gmers.token";
 const NAME_KEY = "gmers.name";
+const SESSION_KEY = "gmers.session";
+const ACCOUNT_KEY = "gmers.account";
 
 /** Identitas perangkat: token acak + nama panggilan. Tanpa akun, tanpa data pribadi lain. */
 export class Identity {
@@ -49,6 +51,30 @@ export class Identity {
     }
     this.cached = t;
     return t;
+  }
+  /** Mengganti identitas room (saat masuk ke akun, atau kembali jadi tamu baru saat keluar). */
+  setToken(token: string): void {
+    this.kv.set(TOKEN_KEY, token);
+    this.cached = token;
+  }
+  /** Sesi masuk: tersimpan permanen di perangkat sampai pengguna memilih keluar. */
+  session(): string | null {
+    return this.kv.get(SESSION_KEY) || null;
+  }
+  setSession(session: string | null): void {
+    this.kv.set(SESSION_KEY, session ?? "");
+  }
+  /** Salinan ringan akun untuk ditampilkan saat server tak terjangkau. */
+  cachedAccount(): { username: string; name: string } | null {
+    try {
+      const raw = this.kv.get(ACCOUNT_KEY);
+      return raw ? (JSON.parse(raw) as { username: string; name: string }) : null;
+    } catch {
+      return null;
+    }
+  }
+  setCachedAccount(a: { username: string; name: string } | null): void {
+    this.kv.set(ACCOUNT_KEY, a ? JSON.stringify(a) : "");
   }
   name(): string | null {
     return this.kv.get(NAME_KEY);

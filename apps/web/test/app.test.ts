@@ -573,11 +573,12 @@ describe("tab navigasi", () => {
     q<HTMLButtonElement>(h.root, '[data-testid="tab-profile"]').click();
     const input = q<HTMLInputElement>(h.root, "input#nama");
     expect(input.value).toBe("Andi");
+    const nameForm = (): HTMLFormElement => q<HTMLInputElement>(h.root, "input#nama").closest("form") as HTMLFormElement;
     input.value = "A";
-    q<HTMLFormElement>(h.root, "form.form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    nameForm().dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     expect(text(q(h.root, "#nama-bantuan"))).toBe(id.name.tooShort);
     q<HTMLInputElement>(h.root, "input#nama").value = "Andi Baru";
-    q<HTMLFormElement>(h.root, "form.form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    nameForm().dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     expect(kv.data.get("gmers.name")).toBe("Andi Baru");
 
     q<HTMLButtonElement>(h.root, '[data-theme-mode="dark"]').click();

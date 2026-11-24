@@ -27,6 +27,17 @@ export interface ServerConfig {
   maxMessageBytes: number;
   dataDir: string;
   roomLogFile: string;
+  /** Berkas akun (JSONL hanya-tambah) di dataDir. */
+  accountsFile: string;
+  /** Biaya scrypt (N). Uji memakai nilai kecil. */
+  passwordCost: number;
+  /** Masa berlaku sesi masuk. null = tidak pernah kedaluwarsa (seperti WhatsApp): sesi hanya berakhir bila pengguna keluar, kata sandi diganti, atau admin mereset. */
+  sessionTtlMs: number | null;
+  /** Pembatas percobaan masuk: setelah loginMaxFails gagal, nama pengguna itu dikunci selama loginLockMs. */
+  loginMaxFails: number;
+  loginLockMs: number;
+  /** Pembatas pendaftaran global (tanpa membaca IP): paling banyak registerBurst per menit. */
+  registerBurst: number;
   /** Null = tidak mencatat peristiwa ke CSV. */
   eventsCsvFile: string | null;
   /** Folder hasil build klien web yang disajikan server (null = tidak menyajikan situs). */
@@ -58,6 +69,12 @@ export const defaultServerConfig: ServerConfig = {
   maxMessageBytes: 4096,
   dataDir: "data",
   roomLogFile: "rooms.jsonl",
+  accountsFile: "accounts.jsonl",
+  passwordCost: 16384,
+  sessionTtlMs: null,
+  loginMaxFails: 5,
+  loginLockMs: 10 * 60 * 1000,
+  registerBurst: 30,
   eventsCsvFile: "events.csv",
   staticDir: null,
   adminToken: null,

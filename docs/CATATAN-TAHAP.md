@@ -183,3 +183,28 @@ Klien 85 uji (+14 uji chat dan penyimpanan: jenis chat berdua/grup, lencana, pra
 3. **Panggilan suara/video dan "Siap main" di mockup tidak dibangun** (di luar cakupan). Tombol dadu oranye dipakai untuk pindah ke meja.
 4. **Riwayat chat hanya di satu perangkat/peramban**: berganti HP atau menghapus data peramban menghilangkan riwayat. Ini konsekuensi dari keputusan tidak menyimpan chat di server.
 5. **Header aplikasi (Gmers + kode room) disembunyikan di tab Chat** karena tab itu punya judul sendiri seperti mockup.
+
+## Akun sederhana: data pengguna dipertahankan di server (24 Nov 2026)
+
+Permintaan Faizal: pendaftaran sederhana supaya data pengguna tersimpan di server; pengguna tidak pernah keluar kecuali memilih sendiri (seperti WhatsApp). Pilihan Faizal: **nama pengguna + kata sandi** (tanpa email dan nomor HP), dan yang disimpan di server: **profil + daftar room** (isi chat tetap tidak disimpan di server). Ini mengubah keputusan awal handover "tanpa akun"; akun dibuat **opsional**.
+
+### Dibangun
+- **Server (`apps/server/src/accounts.ts`, API di `server.ts`):** `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET/PUT /api/me`, `POST /api/me/password`, `DELETE /api/me`, dan `POST /admin/accounts/reset` (token admin). Data di `DATA_DIR/accounts.jsonl` (hanya-tambah, izin 600, tidak bisa diambil lewat web). Kata sandi disimpan sebagai hash **scrypt** dengan garam per akun (tidak pernah polos, termasuk di log), dibandingkan dengan `timingSafeEqual`; jawaban "nama pengguna atau kata sandi salah" sama untuk akun yang tak ada, dengan hash tiruan agar waktu jawaban tidak membocorkannya. Nama pengguna unik tanpa membedakan huruf besar/kecil.
+- **Sesi permanen:** token sesi acak 256 bit (disimpan di server hanya sebagai hash), **tidak kedaluwarsa** (`sessionTtlMs: null`) dan bertahan setelah restart server. Sesi berakhir hanya bila pengguna menekan Keluar, mengganti kata sandi (sesi perangkat lain dicabut), atau admin mereset. Klien menyimpan sesi di `localStorage` dan **tetap masuk walau server tak terjangkau** (hanya jawaban 401 yang mengeluarkan).
+- **Identitas room = akun:** akun memakai token perangkat tamu yang sedang dipakai sebagai identitas room (kursi dan metrik tetap menyambung). Masuk di perangkat lain memakai token akun yang sama, jadi kursi yang sama (sambung ulang), bukan pemain baru, dan satu akun dihitung satu orang di metrik. Bila token sudah terikat akun lain, akun baru mendapat token baru.
+- **Data yang dipertahankan:** nama panggilan, pengaturan (tema, suara), dan **daftar room** (kode kelompok yang pernah diduduki, termasuk room yang sedang diduduki saat mendaftar). Di perangkat baru, daftar room muncul di tab Chat sebagai percakapan kosong dengan tombol "Masuk lagi".
+- **Pelindung penyalahgunaan (tanpa membaca IP):** nama pengguna dikunci 10 menit setelah 5 percobaan masuk gagal; pendaftaran dibatasi 30 per menit global; badan permintaan dibatasi 4 KB dan harus JSON.
+- **Klien:** panel Akun di tab Profil (tab Daftar/Masuk untuk tamu; untuk yang masuk: "Masuk sebagai @nama", Keluar dengan konfirmasi, Ubah kata sandi, Hapus akun dengan kata sandi), spanduk "Daftar" di daftar chat untuk tamu yang sudah punya percakapan, sinkronisasi nama/tema/suara ke server saat masuk. Keluar dan hapus akun membersihkan sesi, riwayat chat lokal, dan identitas perangkat, lalu memuat ulang.
+- **Privasi (DRAF):** teks `/privasi` diperbarui (bagian "Jika kamu mendaftar akun").
+
+### Uji
+Server 95 (+26: layanan akun, API, sesi permanen termasuk 5 tahun dan restart, penguncian, ganti/hapus/reset, daftar room, sambung ke layanan room, berkas disk tanpa kata sandi polos), klien 105 (+20: daftar, masuk, galat, pemulihan sesi, tetap masuk saat server mati, hanya 401 yang mengeluarkan, keluar, ganti kata sandi, hapus akun, sinkron profil, spanduk), E2E Chromium: daftar, muat ulang tetap masuk, kata sandi salah ditolak, masuk dari konteks browser lain dan room muncul di daftar chat. Menemukan dan memperbaiki satu bug: hitungan percobaan gagal ter-reset sehingga penguncian tidak pernah aktif.
+
+### Keputusan otomatis (tambahan)
+1. **Akun opsional, bukan wajib:** tamu tetap bisa main lewat tautan tanpa mendaftar, supaya uji "kelompok aktif" tidak tersendat di pendaftaran. Ubah menjadi wajib hanya bila Faizal memutuskan.
+2. **Tanpa email berarti tanpa "lupa kata sandi" otomatis:** reset dilakukan admin lewat `POST /admin/accounts/reset` (lihat `docs/DEPLOY.md`). Konsekuensi: pengguna yang lupa harus menghubungi Faizal.
+3. **Sesi tidak kedaluwarsa** (sesuai permintaan). Risikonya: HP yang hilang tetap masuk sampai kata sandi diganti atau admin mereset. Pembatasan masa berlaku tersedia lewat konfigurasi `sessionTtlMs`.
+4. **Keluar membersihkan riwayat chat lokal** agar akun berikutnya di perangkat bersama tidak melihatnya; hapus akun melakukan hal sama.
+5. **Hapus akun hanya menghapus akun di server.** Catatan anonim yang sudah ada (hash perangkat di `events.csv` dan `rooms.jsonl`) tidak dihapus; keduanya tidak memuat nama pengguna. Retensi 90 hari tetap usulan.
+6. **Satu akun = satu orang di metrik.** Perubahan ini memperbaiki penghitungan "perangkat sama = satu orang" untuk pengguna terdaftar, tetapi tamu tetap dihitung per perangkat.
+7. **Tidak ada pembatasan per IP** (aturan: IP tidak dibaca). Pembatas global dan penguncian per nama pengguna adalah penggantinya; serangan tebak-sandi terdistribusi pada satu nama pengguna bisa mengunci pemiliknya selama 10 menit.

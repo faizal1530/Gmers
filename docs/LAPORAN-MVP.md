@@ -125,3 +125,14 @@ Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain
 Setelah uji sendiri: tab bawah **Games, Room, Chat, Profil** (mengikuti pola mockup, tanpa Komunitas, Live, teman, Tiket), meja yang lebih hidup (avatar, bilah waktu, catatan langkah terakhir, animasi kartu, hasil dengan pemenang), **suara** (kartu, lewat, giliranmu, sundulan, mulai, menang, kalah, chat; bisa dimatikan di Profil), dan tombol **Colek** untuk mengingatkan pemain yang sedang ditunggu. Rincian dan keputusan otomatis: `docs/CATATAN-TAHAP.md`, bagian "Pembaruan pengalaman bermain".
 
 Belum teruji di HP asli: bunyi (kebijakan putar-otomatis iOS Safari dan WebView WhatsApp bisa menahan suara sampai sentuhan pertama), getar (iOS tidak mendukung `navigator.vibrate`), dan keterbacaan avatar/kartu di layar kecil selain 360 px. Cek ini saat uji di Android dan iPhone asli.
+
+## 10. Akun sederhana (24 Nov 2026)
+
+Pemain bisa **mendaftar dengan nama pengguna + kata sandi** (opsional; tamu tetap bisa main). Yang tersimpan di server: nama panggilan, pengaturan, dan daftar room; isi chat tetap tidak disimpan. Pengguna **tetap masuk sampai memilih keluar** (sesi tidak kedaluwarsa, bertahan setelah restart server dan saat server sedang tak terjangkau). Akun yang sama di perangkat lain mendapat kursi dan daftar room yang sama. Rincian dan keputusan otomatis: `docs/CATATAN-TAHAP.md`, bagian "Akun sederhana".
+
+**Perlu tindakan Faizal (tambahan):**
+- **Tinjau hukum dan privasi sebelum rilis publik:** sekarang ada data pribadi di server (nama pengguna, hash kata sandi). Teks `/privasi` sudah diperbarui tetapi masih DRAF.
+- **Cadangan `accounts.jsonl`** (DEPLOY.md bagian 5b): berkas ini tidak bisa dibuat ulang.
+- **Siapkan cara menerima permintaan "lupa kata sandi"** (tanpa email, hanya Anda yang bisa mereset lewat `/admin/accounts/reset`).
+- Putuskan apakah sesi tanpa kedaluwarsa dapat diterima (HP hilang tetap masuk), dan apakah akun sebaiknya tetap opsional selama uji 10 kelompok.
+- **Hash kata sandi (scrypt) belum ditinjau pihak ketiga;** untuk rilis publik pertimbangkan tinjauan keamanan.
