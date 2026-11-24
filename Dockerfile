@@ -32,10 +32,11 @@ COPY packages/game-engine/src packages/game-engine/src
 COPY apps/server/tsconfig.json apps/server/
 COPY apps/server/src apps/server/src
 COPY --from=build /app/apps/web/dist apps/web/dist
-# Folder data (log langkah JSONL dan events.csv) dimiliki pengguna non-root; pasang Volume di /data.
+# Folder data (log langkah JSONL dan events.csv); pasang Volume di /data.
+# Volume Railway dipasang milik root, jadi kontainer mulai sebagai root, memperbaiki
+# pemilik /data, lalu server berjalan sebagai pengguna non-root `node` (setpriv).
 RUN mkdir -p /data && chown -R node:node /data
-USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["apps/server/node_modules/.bin/tsx", "apps/server/src/main.ts"]
+CMD ["sh", "-c", "chown -R node:node /data && exec setpriv --reuid=node --regid=node --init-groups apps/server/node_modules/.bin/tsx apps/server/src/main.ts"]
