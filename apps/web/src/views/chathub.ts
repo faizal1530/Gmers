@@ -20,6 +20,8 @@ export interface HubDeps {
   /** Pengguna tamu (belum punya akun). */
   isGuest: () => boolean;
   onUnread: () => void;
+  /** Emoji tambahan dari paket yang dimiliki (Toko). */
+  extraEmojis?: () => string[];
   /** Chat 1-1: kirim pesan ke teman (lewat server, tidak disimpan di sana). */
   sendDm: (username: string, text: string) => boolean;
   /** Apakah masih berteman (saling ikuti atau saling simpan kontak). */
@@ -307,7 +309,7 @@ export class ChatHub {
     const input = h("input", { class: "th-input", type: "text", maxlength: CHAT_MAX, placeholder: c.dm ? id.dm.placeholder : id.chat.placeholder, "aria-label": id.chat.placeholder, autocomplete: "off", "data-testid": "chat-input" });
     this.input = input;
     this.note = h("p", { class: "hint bad", role: "status" });
-    this.tray = h("div", { class: "emoji-tray", hidden: true, role: "group", "aria-label": id.chat.emoji }, id.chat.emojis.map((e) => h("button", { type: "button", class: "emoji", onclick: () => { input.value += e; input.focus(); } }, e)));
+    this.tray = h("div", { class: "emoji-tray", hidden: true, role: "group", "aria-label": id.chat.emoji }, [...id.chat.emojis, ...(this.d.extraEmojis?.() ?? [])].map((e) => h("button", { type: "button", class: "emoji", onclick: () => { input.value += e; input.focus(); } }, e)));
     foot.append(
       this.note,
       this.tray,

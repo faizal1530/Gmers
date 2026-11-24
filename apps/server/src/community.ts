@@ -167,12 +167,14 @@ export class Community {
       }
       case "like": {
         const p = this.posts.get(r.post);
-        if (p) r.on ? p.likes.add(r.by) : p.likes.delete(r.by);
+        if (p && r.on) p.likes.add(r.by);
+        else p?.likes.delete(r.by);
         break;
       }
       case "save": {
         const s = this.saved.get(r.by) ?? new Set<string>();
-        r.on ? s.add(r.post) : s.delete(r.post);
+        if (r.on) s.add(r.post);
+        else s.delete(r.post);
         this.saved.set(r.by, s);
         break;
       }

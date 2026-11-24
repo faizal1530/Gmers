@@ -9,6 +9,9 @@ export interface LobbyActions {
   onLeave: () => void;
   onSetGame: (game: "gaple" | "ludo") => void;
   onSetRanked: (on: boolean) => void;
+  onSetWatch: (on: boolean) => void;
+  /** Hanya akun yang bisa menyiarkan atau menonton. */
+  canWatch: boolean;
   onCopy: (url: string) => Promise<boolean>;
   origin: string;
 }
@@ -74,6 +77,16 @@ export function lobbyView(s: StateMessage, a: LobbyActions): HTMLElement {
         : h("p", { class: "game-label", "data-testid": "ranked-label" }, s.room.ranked ? id.ranked.rankedOn : id.ranked.casual),
       h("p", { class: "hint" }, allRegistered || s.room.ranked ? id.ranked.lobbyNote : id.ranked.needAccounts),
     ),
+    isHost && a.canWatch
+      ? h(
+          "div",
+          { class: "panel", "data-testid": "watch-pick" },
+          h("h2", {}, id.live.toggleTitle),
+          h("div", { class: "seg", role: "radiogroup", "aria-label": id.live.toggleTitle }, ([false, true] as const).map((on) => h("button", { type: "button", role: "radio", class: `seg-btn${s.room.watchable === on ? " on" : ""}`, "aria-checked": String(s.room.watchable === on), "data-watch": on ? "on" : "off", onclick: () => a.onSetWatch(on) }, on ? id.live.toggleOn : id.live.toggleOff))),
+          h("p", { class: "hint" }, id.live.toggleNote),
+          s.room.watchable ? h("p", { class: "hint" }, id.live.spectatorsNow(s.room.spectators)) : null,
+        )
+      : null,
     h(
       "div",
       { class: "panel" },

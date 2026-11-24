@@ -80,6 +80,56 @@ export interface NoticeRow {
   read: boolean;
 }
 
+export interface FeedItem {
+  id: string;
+  ts: number;
+  author: { username: string; name: string };
+  text: string;
+  comm: string | null;
+  likes: number;
+  replies: number;
+  liked: boolean;
+  saved: boolean;
+  mine: boolean;
+}
+export interface ReplyItem {
+  id: string;
+  ts: number;
+  author: { username: string; name: string };
+  text: string;
+  mine: boolean;
+}
+export interface FeedPage {
+  items: FeedItem[];
+  next: number | null;
+  suggestions: PersonRow[];
+}
+export type FeedTab = "untukmu" | "mengikuti" | "tersimpan";
+export interface ShopItemView {
+  id: string;
+  kind: "dadu" | "emoji" | "avatar";
+  name: string;
+  price: number;
+  free?: boolean;
+  owned: boolean;
+  equipped: boolean;
+}
+export interface ShopData {
+  koin: number;
+  canClaim: boolean;
+  dailyKoin: number;
+  items: ShopItemView[];
+  equipped: Partial<Record<"dadu" | "emoji" | "avatar", string>>;
+  simulation: true;
+}
+export interface LiveRoom {
+  key: string;
+  game: "gaple" | "ludo";
+  ranked: boolean;
+  players: string[];
+  spectators: number;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string };
 
 type FetchLike = (input: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ status: number; json(): Promise<unknown> }>;
@@ -138,6 +188,39 @@ export class Api {
   }
   readNotices(): Promise<ApiResult<{ ok: true }>> {
     return this.call("POST", "/api/notices/read", {});
+  }
+  feed(tab: FeedTab, comm: string | null, before: number | null): Promise<ApiResult<FeedPage>> {
+    const q = new URLSearchParams({ tab });
+    if (comm) q.set("comm", comm);
+    if (before) q.set("before", String(before));
+    return this.call("GET", `/api/feed?${q.toString()}`);
+  }
+  post(text: string, comm: string | null): Promise<ApiResult<{ id: string }>> {
+    return this.call("POST", "/api/posts", { text, comm });
+  }
+  thread(postId: string): Promise<ApiResult<{ post: FeedItem; replies: ReplyItem[] }>> {
+    return this.call("GET", `/api/posts/${postId}`);
+  }
+  reply(postId: string, text: string): Promise<ApiResult<{ id: string }>> {
+    return this.call("POST", `/api/posts/${postId}/replies`, { text });
+  }
+  toggle(postId: string, what: "like" | "save", on: boolean): Promise<ApiResult<{ ok: true }>> {
+    return this.call("POST", `/api/posts/${postId}/${what}`, { on });
+  }
+  hidePost(postId: string): Promise<ApiResult<{ ok: true }>> {
+    return this.call("POST", `/api/posts/${postId}/hide`, {});
+  }
+  removePost(postId: string): Promise<ApiResult<{ ok: true }>> {
+    return this.call("DELETE", `/api/posts/${postId}`);
+  }
+  shop(): Promise<ApiResult<ShopData>> {
+    return this.call("GET", "/api/shop");
+  }
+  shopAct(kind: "claim" | "buy" | "equip", item?: string): Promise<ApiResult<{ ok: true; shop: ShopData; wallet: WalletInfo }>> {
+    return this.call("POST", `/api/shop/${kind}`, item ? { item } : {});
+  }
+  live(): Promise<ApiResult<{ rooms: LiveRoom[] }>> {
+    return this.call("GET", "/api/live");
   }
   logout(): Promise<ApiResult<{ ok: true }>> {
     return this.call("POST", "/api/logout", {});

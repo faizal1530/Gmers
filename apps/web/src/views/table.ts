@@ -51,7 +51,7 @@ export function turnBar(s: StateMessage, a: { onNudge: () => void; nudgeCooling:
   const mine = isMyTurn(s);
   const turnSeat = s.room.seats[game.turn];
   const turnName = turnSeat?.name ?? "";
-  const canNudge = !mine && !!turnSeat && turnSeat.connected;
+  const canNudge = s.you.seat >= 0 && !mine && !!turnSeat && turnSeat.connected;
   return h(
     "div",
     { class: `turnbar${mine ? " mine" : ""}`, role: "status", "aria-live": "polite" },
@@ -156,9 +156,9 @@ export function tableView(s: StateMessage, a: TableActions): HTMLElement {
     status,
     ends,
     board,
-    h("p", { class: "hint center", role: "status" }, hint),
-    h("button", { class: "btn big pass", type: "button", "data-testid": "pass", disabled: !canPass(moves), onclick: a.onPass }, id.table.pass),
-    hand,
+    s.you.seat >= 0 ? h("p", { class: "hint center", role: "status" }, hint) : null,
+    s.you.seat >= 0 ? h("button", { class: "btn big pass", type: "button", "data-testid": "pass", disabled: !canPass(moves), onclick: a.onPass }, id.table.pass) : null,
+    s.you.seat >= 0 ? hand : null,
     picker,
   );
 }

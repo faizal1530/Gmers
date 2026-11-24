@@ -1,6 +1,6 @@
 import type { Card } from "@gmers/game-engine";
 import type { ClientMessage, ServerMessage, StateMessage } from "@gmers/server/protocol";
-import { Api, type AccountInfo, type FriendsData, type LeaderRow, type NoticeRow, type NotifPrefs, type StatusId, type UserCard, type WalletInfo } from "./api";
+import { Api, type AccountInfo, type FeedItem, type FeedTab, type FriendsData, type LiveRoom, type ReplyItem, type ShopData, type LeaderRow, type NoticeRow, type NotifPrefs, type StatusId, type UserCard, type WalletInfo } from "./api";
 import { clear, h } from "./dom";
 import { id } from "./i18n/id";
 import { cardKey, checkName, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
@@ -10,7 +10,10 @@ import { Identity, createKV, randomToken, type KV } from "./storage";
 import { applyTheme, readTheme, type ThemeMode } from "./theme";
 import { ChatStore, type InviteInfo, type StoredMsg } from "./chatstore";
 import { ChatHub } from "./views/chathub";
+import { communityView } from "./views/community";
 import { friendsView } from "./views/friends";
+import { liveListView } from "./views/live";
+import { shopView } from "./views/shop";
 import { gamesView } from "./views/games";
 import { lobbyView } from "./views/lobby";
 import { ludoView } from "./views/ludo";
@@ -118,6 +121,26 @@ export class App {
   private queueStartedAt = 0;
   private pendingQueue: "gaple" | "ludo" | null = null;
   private board: { rows: LeaderRow[]; you: { rank: number | null } } | null = null;
+  private section: "main" | "komunitas" | "live" | "toko" = "main";
+  private ver = 0;
+  private comm = {
+    tab: "untukmu" as FeedTab,
+    comm: null as string | null,
+    items: null as FeedItem[] | null,
+    next: null as number | null,
+    suggestions: [] as { username: string; name: string }[],
+    failed: false,
+    posting: false,
+    draft: "",
+    replyDraft: "",
+    thread: null as { post: FeedItem; replies: ReplyItem[] } | null,
+  };
+  private shopData: ShopData | null = null;
+  private shopFailed = false;
+  private shopBusy = false;
+  private liveRooms: LiveRoom[] | null = null;
+  private liveFailed = false;
+  private spectate: { key: string; delayMs: number; state: StateMessage | null; ended: string | null; chat: { name: string; text: string; ts: number }[]; draft: string } | null = null;
   private friends: FriendsData | null = null;
   private friendsFailed = false;
   private friendsOpen = false;
@@ -177,6 +200,7 @@ export class App {
       toProfile: () => this.selectTab("profile"),
       isGuest: () => this.account === null,
       onUnread: () => this.renderNav(),
+      extraEmojis: () => this.ownedEmojis(),
       sendDm: (u, t) => this.sendDm(u, t),
       isFriend: (u) => this.friends === null || this.friends.friends.some((f) => f.username === u),
       onInviteFriend: (u) => this.inviteFriend(u),
@@ -256,12 +280,175 @@ export class App {
     this.hub.refresh();
     this.renderNav();
     void this.loadFriends();
+    void this.loadShop();
     const hadClient = this.client !== null;
     this.ensureClient(); // tersambung agar pesan teman dan ajakan bisa diterima
     // Koneksi yang sudah terbuka sebelum masuk akun perlu dikenali ulang.
     const session = this.identity.session();
     if (hadClient && this.client?.isOpen && session && /^[0-9a-f]{64}$/.test(session)) this.sendMsg({ type: "auth", session });
     return changed;
+  }
+
+  // ---------- bagian Games: Komunitas, Live, Toko ----------
+
+  private selectSection(sec: "main" | "komunitas" | "live" | "toko"): void {
+    this.section = sec;
+    if (sec === "komunitas" && this.account && this.comm.items === null) void this.loadFeed(false);
+    if (sec === "live" && this.account) void this.loadLive();
+    if (sec === "toko" && this.account) void this.loadShop();
+    this.ver++;
+    this.render(true);
+  }
+
+  private async loadFeed(more: boolean): Promise<void> {
+    const c = this.comm;
+    const r = await this.api.feed(c.tab, c.comm, more ? c.next : null);
+    if (r.ok) {
+      c.items = more && c.items ? [...c.items, ...r.data.items] : r.data.items;
+      c.next = r.data.next;
+      if (!more) c.suggestions = r.data.suggestions;
+      c.failed = false;
+    } else if (!more) c.failed = true;
+    this.ver++;
+    this.render(false);
+  }
+
+  private resetFeed(patch: Partial<{ tab: FeedTab; comm: string | null }>): void {
+    Object.assign(this.comm, patch, { items: null, next: null, failed: false });
+    this.ver++;
+    this.render(true);
+    void this.loadFeed(false);
+  }
+
+  private async doPost(text: string): Promise<void> {
+    this.comm.posting = true;
+    this.ver++;
+    this.render(true);
+    const r = await this.api.post(text, this.comm.comm);
+    this.comm.posting = false;
+    if (r.ok) {
+      this.comm.draft = "";
+      await this.loadFeed(false);
+    } else this.showToast(r.message);
+    this.ver++;
+    this.render(true);
+  }
+
+  private patchItem(postId: string, fn: (p: FeedItem) => FeedItem): void {
+    const c = this.comm;
+    if (c.items) c.items = c.items.map((p) => (p.id === postId ? fn(p) : p));
+    if (c.thread && c.thread.post.id === postId) c.thread = { ...c.thread, post: fn(c.thread.post) };
+  }
+
+  private async togglePost(p: FeedItem, what: "like" | "save"): Promise<void> {
+    const on = what === "like" ? !p.liked : !p.saved;
+    const r = await this.api.toggle(p.id, what, on);
+    if (!r.ok) return void this.showToast(r.message);
+    this.patchItem(p.id, (x) => (what === "like" ? { ...x, liked: on, likes: x.likes + (on ? 1 : -1) } : { ...x, saved: on }));
+    if (what === "save" && !on && this.comm.tab === "tersimpan" && this.comm.items) this.comm.items = this.comm.items.filter((x) => x.id !== p.id);
+    this.ver++;
+    this.render(true);
+  }
+
+  private async openThread(postId: string): Promise<void> {
+    const r = await this.api.thread(postId);
+    if (!r.ok) return void this.showToast(r.message);
+    this.comm.thread = r.data;
+    this.comm.replyDraft = "";
+    this.ver++;
+    this.render(true);
+  }
+
+  private async sendReply(postId: string, text: string): Promise<void> {
+    const r = await this.api.reply(postId, text);
+    if (!r.ok) return void this.showToast(r.message);
+    this.comm.replyDraft = "";
+    await this.openThread(postId);
+    this.patchItem(postId, (x) => ({ ...x, replies: x.replies + 1 }));
+  }
+
+  private async removePost(postId: string): Promise<void> {
+    const r = await this.api.removePost(postId);
+    if (!r.ok) return void this.showToast(r.message);
+    if (this.comm.thread && this.comm.thread.post.id !== postId) {
+      await this.openThread(this.comm.thread.post.id);
+      return;
+    }
+    this.comm.thread = null;
+    await this.loadFeed(false);
+  }
+
+  private async loadShop(): Promise<void> {
+    if (!this.account) return;
+    const r = await this.api.shop();
+    if (r.ok) {
+      this.shopData = r.data;
+      this.shopFailed = false;
+    } else this.shopFailed = true;
+    this.ver++;
+    this.hub.refresh();
+    this.render(false);
+  }
+
+  private async shopAct(kind: "claim" | "buy" | "equip", item?: string): Promise<void> {
+    this.shopBusy = true;
+    this.ver++;
+    this.render(true);
+    const r = await this.api.shopAct(kind, item);
+    this.shopBusy = false;
+    if (r.ok) {
+      this.shopData = r.data.shop;
+      this.wallet = r.data.wallet;
+      this.showToast(kind === "claim" ? id.shop.claimOk : kind === "buy" ? id.shop.bought : id.shop.equippedOk);
+    } else this.showToast(r.message);
+    this.ver++;
+    this.hub.refresh();
+    this.render(true);
+  }
+
+  /** Kelas CSS skin dadu yang terpasang (hanya tampilan lokal). */
+  private diceSkin(): string {
+    const eq = this.shopData?.equipped.dadu ?? "dadu_klasik";
+    return `skin-${eq.replace(/^dadu_/, "").replace(/_/g, "-")}`;
+  }
+
+  private ownedEmojis(): string[] {
+    const packs: Record<string, string[]> = { emoji_meja_gaple: ["🎴", "🃏", "♠️", "♥️", "🎯", "🪑"], emoji_drama_ludo: ["🎲", "🏁", "😱", "🤯", "😤", "🥳"] };
+    return (this.shopData?.items ?? []).filter((i) => i.kind === "emoji" && i.owned).flatMap((i) => packs[i.id] ?? []);
+  }
+
+  private async loadLive(): Promise<void> {
+    const r = await this.api.live();
+    if (r.ok) {
+      this.liveRooms = r.data.rooms;
+      this.liveFailed = false;
+    } else this.liveFailed = true;
+    this.ver++;
+    this.render(false);
+  }
+
+  private startWatch(key: string): void {
+    this.ensureClient();
+    this.spectate = { key, delayMs: 0, state: null, ended: null, chat: [], draft: "" };
+    this.tab = "room";
+    this.sendMsg({ type: "watch", key });
+    this.ver++;
+    this.render(true);
+  }
+
+  private stopWatch(): void {
+    this.sendMsg({ type: "unwatch" });
+    this.spectate = null;
+    this.tab = "games";
+    this.section = "live";
+    void this.loadLive();
+    this.ver++;
+    this.render(true);
+  }
+
+  private sendWatchChat(text: string): void {
+    if (this.spectate) this.spectate.draft = "";
+    this.sendMsg({ type: "watch_chat", text });
   }
 
   // ---------- teman ----------
@@ -553,6 +740,12 @@ export class App {
   private onMessage(m: ServerMessage): void {
     switch (m.type) {
       case "state":
+        if (m.spectating) {
+          if (this.spectate) this.spectate.state = m;
+          this.ver++;
+          this.render(false);
+          return;
+        }
         this.onState(m);
         return;
       case "group_info":
@@ -606,6 +799,23 @@ export class App {
         if (m.state === "waiting" && this.queue.state !== "waiting") this.queueStartedAt = Date.now();
         this.queue = { state: m.state, game: m.game, since: m.since };
         this.render(false);
+        return;
+      case "watching":
+        if (this.spectate) this.spectate.delayMs = m.delayMs;
+        this.ver++;
+        this.render(false);
+        return;
+      case "watch_end":
+        if (this.spectate && m.reason !== "left") this.spectate.ended = id.live.ended[m.reason];
+        this.ver++;
+        this.render(false);
+        return;
+      case "watch_chat":
+        if (this.spectate) {
+          this.spectate.chat = [...this.spectate.chat.slice(-49), { name: m.name, text: m.text, ts: m.ts }];
+          this.ver++;
+          this.render(false);
+        }
         return;
       case "dm":
         this.onDm(m);
@@ -927,8 +1137,9 @@ export class App {
     if (this.route.kind === "notfound") return "notfound";
     switch (this.tab) {
       case "games":
-        return `games:${this.busy}:${this.room?.room.groupId ?? ""}:${this.queue.state}:${this.account?.username ?? ""}:${this.board?.rows.length ?? -1}:${this.board?.you.rank ?? ""}`;
+        return `games:${this.section}:${this.ver}:${this.busy}:${this.room?.room.groupId ?? ""}:${this.queue.state}:${this.account?.username ?? ""}:${this.board?.rows.length ?? -1}:${this.board?.you.rank ?? ""}`;
       case "room": {
+        if (this.spectate) return `spectate:${this.ver}`;
         if (this.room) return "room";
         const i = this.info;
         return this.route.kind === "link" ? `link:${this.busy}:${this.notice ?? ""}:${i ? `${i.phase}/${i.players}/${i.isMember}` : "loading"}` : "roomempty";
@@ -962,25 +1173,9 @@ export class App {
     if (this.route.kind === "notfound") return notFoundView("page", () => this.goHome());
     switch (this.tab) {
       case "games":
-        return gamesView({
-          initialName: this.identity.name() ?? "",
-          busy: this.busy,
-          roomCode: this.room?.room.groupId ?? null,
-          onCreate: (n, g) => this.create(n, g),
-          onBackToRoom: () => this.selectTab("room"),
-          extra: [
-            rankedCard({
-              loggedIn: this.account !== null,
-              queue: this.queue,
-              waited: Math.floor((Date.now() - this.queueStartedAt) / 1000),
-              onFind: (g) => this.findMatch(g),
-              onCancel: () => this.cancelMatch(),
-              onToProfile: () => this.selectTab("profile"),
-            }),
-            ...(this.account ? [leaderboardView(this.board?.rows ?? null, this.board?.you ?? null)] : []),
-          ],
-        });
+        return this.buildGames();
       case "room":
+        if (this.spectate) return this.buildSpectate(this.spectate);
         if (this.room) return this.buildRoom(this.room);
         return this.route.kind === "link" ? this.buildLink() : this.buildRoomEmpty();
       case "chat":
@@ -998,6 +1193,7 @@ export class App {
           },
           wallet: walletPanel(this.wallet, this.account !== null),
           name: this.identity.name() ?? "",
+          avatarFrame: this.shopData?.equipped.avatar ?? null,
           theme: this.theme,
           soundOn: this.sound.enabled,
           onSaveName: (n) => {
@@ -1025,6 +1221,117 @@ export class App {
           onPrivacy: () => this.openPrivacy(),
         });
     }
+  }
+
+  private buildGamesMain(): HTMLElement {
+    return gamesView({
+      initialName: this.identity.name() ?? "",
+      busy: this.busy,
+      roomCode: this.room?.room.groupId ?? null,
+      onCreate: (n, g) => this.create(n, g),
+      onBackToRoom: () => this.selectTab("room"),
+      extra: [
+        rankedCard({
+          loggedIn: this.account !== null,
+          queue: this.queue,
+          waited: Math.floor((Date.now() - this.queueStartedAt) / 1000),
+          onFind: (g) => this.findMatch(g),
+          onCancel: () => this.cancelMatch(),
+          onToProfile: () => this.selectTab("profile"),
+        }),
+        ...(this.account ? [leaderboardView(this.board?.rows ?? null, this.board?.you ?? null)] : []),
+      ],
+    });
+  }
+
+  private buildGames(): HTMLElement {
+    const sec = this.section;
+    const labels: [typeof sec, string][] = [["main", id.sections.main], ["komunitas", id.sections.komunitas], ["live", id.sections.live], ["toko", id.sections.toko]];
+    const nav = h("div", { class: "seg", role: "tablist", "aria-label": id.sections.label }, labels.map(([k, label]) => h("button", { type: "button", role: "tab", class: `seg-btn${sec === k ? " on" : ""}`, "aria-selected": String(sec === k), "data-section": k, onclick: () => this.selectSection(k) }, label)));
+    if (sec === "main") return h("div", { class: "stack" }, nav, this.buildGamesMain());
+    const guest = h("div", { class: "panel" }, h("p", { class: "hint", "data-testid": "section-guest" }, id.sections.needAccount), h("button", { type: "button", class: "btn primary", onclick: () => this.selectTab("profile") }, id.sections.toProfile));
+    if (!this.account) return h("div", { class: "stack" }, nav, guest);
+    if (sec === "komunitas") return h("div", { class: "stack" }, nav, this.buildCommunity());
+    if (sec === "toko") return h("div", { class: "stack" }, nav, shopView({ data: this.shopData, failed: this.shopFailed, busy: this.shopBusy, onClaim: () => void this.shopAct("claim"), onBuy: (i) => void this.shopAct("buy", i), onEquip: (i) => void this.shopAct("equip", i), onRetry: () => void this.loadShop() }));
+    return h("div", { class: "stack" }, nav, liveListView({ loggedIn: true, rooms: this.liveRooms, failed: this.liveFailed, onWatch: (k) => this.startWatch(k), onRefresh: () => void this.loadLive(), onToProfile: () => this.selectTab("profile") }));
+  }
+
+  private buildCommunity(): HTMLElement {
+    const c = this.comm;
+    return communityView({
+      tab: c.tab,
+      comm: c.comm,
+      items: c.items,
+      next: c.next,
+      suggestions: c.suggestions,
+      failed: c.failed,
+      posting: c.posting,
+      draft: c.draft,
+      thread: c.thread,
+      replyDraft: c.replyDraft,
+      now: Date.now(),
+      communities: Object.entries(id.community.communities).map(([cid, name]) => ({ id: cid, name })),
+      onDraft: (v) => void (c.draft = v),
+      onReplyDraft: (v) => void (c.replyDraft = v),
+      onPost: (t) => void this.doPost(t),
+      onTab: (t) => this.resetFeed({ tab: t }),
+      onComm: (k) => this.resetFeed({ comm: k }),
+      onMore: () => void this.loadFeed(true),
+      onRetry: () => void this.loadFeed(false),
+      onLike: (p) => void this.togglePost(p, "like"),
+      onSave: (p) => void this.togglePost(p, "save"),
+      onOpen: (p) => void this.openThread(p.id),
+      onCloseThread: () => {
+        c.thread = null;
+        this.ver++;
+        this.render(true);
+      },
+      onReply: (pid, t) => void this.sendReply(pid, t),
+      onShare: (p) => void this.copy(`${p.author.name}: ${p.text}\n${this.origin}`).then((ok) => this.showToast(ok ? id.community.shared : id.lobby.copyFailed)),
+      onHide: (p) => {
+        void this.api.hidePost(p.id);
+        if (c.items) c.items = c.items.filter((x) => x.id !== p.id);
+        this.ver++;
+        this.render(true);
+      },
+      onReport: (p, reason) => void this.api.report("post", p.id, reason).then((r) => this.showToast(r.ok ? id.community.reportSent : r.message)),
+      onRemove: (pid) => void this.removePost(pid),
+      onFollow: (u) => void this.api.relate("follow", u.username, true).then((r) => {
+        if (r.ok) c.suggestions = c.suggestions.filter((x) => x.username !== u.username);
+        else this.showToast(r.message);
+        this.ver++;
+        this.render(true);
+      }),
+    });
+  }
+
+  /** Penonton: papan tertunda tanpa kartu pemain, chat penonton, tombol berhenti. */
+  private buildSpectate(sp: NonNullable<App["spectate"]>): HTMLElement {
+    const l = id.live;
+    const s = sp.state;
+    const noop = (): void => undefined;
+    let board: HTMLElement;
+    if (!s) board = h("p", { class: "panel hint center", role: "status", "data-testid": "spectate-wait" }, sp.ended ?? l.waitingFrame);
+    else if (s.room.phase === "finished") board = resultView(s, false, noop);
+    else if (s.game?.kind === "ludo") board = ludoView(s, { connected: true, nudgeCooling: true, lastMoveText: null, diceSkin: "skin-klasik", onRoll: noop, onPick: noop, onNudge: noop });
+    else board = tableView(s, { connected: true, pendingCard: null, lastMove: null, nudgeCooling: true, onPlay: noop, onNeedEnd: noop, onCancelEnd: noop, onPass: noop, onNudge: noop });
+    const input = h("input", { class: "input", type: "text", maxlength: 300, value: sp.draft, placeholder: l.chatPlaceholder, "aria-label": l.chatPlaceholder, "data-testid": "watch-input", oninput: (e: Event) => void (sp.draft = (e.target as HTMLInputElement).value) });
+    return h(
+      "section",
+      { class: "stack spectating", "data-testid": "spectate" },
+      h("p", { class: "notice", role: "status", "data-testid": "spectate-banner" }, `${l.watching}. ${l.delay(Math.round(sp.delayMs / 1000))}`),
+      sp.ended && s ? h("p", { class: "notice", role: "alert" }, sp.ended) : null,
+      board,
+      h(
+        "div",
+        { class: "panel" },
+        h("h2", {}, l.chatTitle),
+        h("p", { class: "hint" }, l.chatNote),
+        h("ul", { class: "flist", "data-testid": "watch-log" }, sp.chat.map((c) => h("li", {}, h("b", {}, c.name), ": ", c.text))),
+        h("form", { class: "form", onsubmit: (e: Event) => { e.preventDefault(); if (input.value.trim()) this.sendWatchChat(input.value.trim()); } }, input, h("button", { type: "submit", class: "btn", "data-testid": "watch-send" }, l.chatSend)),
+      ),
+      h("button", { type: "button", class: "btn", "data-testid": "unwatch", onclick: () => this.stopWatch() }, l.leave),
+    );
   }
 
   private buildFriends(): HTMLElement {
@@ -1111,6 +1418,8 @@ export class App {
         onLeave: () => this.sendMsg({ type: "leave" }),
         onSetGame: (game) => this.sendMsg({ type: "set_game", game }),
         onSetRanked: (on) => this.sendMsg({ type: "set_ranked", on }),
+        onSetWatch: (on) => this.sendMsg({ type: "set_watch", on }),
+        canWatch: this.account !== null,
       });
     }
     if (s.room.phase === "finished") {
@@ -1125,7 +1434,7 @@ export class App {
         connected,
         nudgeCooling: Date.now() < this.nudgeUntil,
         lastMoveText: this.lastMove?.text ?? null,
-        diceSkin: "skin-klasik",
+        diceSkin: this.diceSkin(),
         onRoll: () => {
           if (s.game?.yourMoves.some((m) => m.type === "roll") && isMyTurn(s)) this.sendMsg({ type: "roll" });
         },

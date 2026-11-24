@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   check(existsSync(join(dist, "index.html")), "hasil build ada");
 
   const dataDir = mkdtempSync(join(tmpdir(), "gmers-e2e-"));
-  const server = await startServer({ ...defaultServerConfig, port: 0, host: "127.0.0.1", dataDir, staticDir: dist, eventsCsvFile: "events.csv", adminToken: null, passwordCost: 1024, economy: { ...DEFAULT_ECONOMY, queueWaitMs: 1500 } });
+  const server = await startServer({ ...defaultServerConfig, port: 0, host: "127.0.0.1", dataDir, staticDir: dist, eventsCsvFile: "events.csv", adminToken: null, passwordCost: 1024, economy: { ...DEFAULT_ECONOMY, queueWaitMs: 1500 }, liveDelayMs: 2000 });
   const base = `http://127.0.0.1:${server.port}`;
   log(`server di ${base}`);
 
@@ -452,6 +452,7 @@ async function main(): Promise<void> {
     const befriend = async (p: Page, target: string): Promise<void> => {
       await p.click('[data-testid="tab-chat"]');
       await p.click('[data-testid="open-friends"]');
+      await p.waitForSelector("[data-status]"); // tunggu data teman selesai dimuat (tampilan dibangun ulang)
       await p.fill('[data-testid="friend-search"]', target);
       await p.click('[data-testid="friend-search-btn"]');
       await p.waitForSelector('[data-testid="usercard"], [data-testid="search-error"]', { timeout: 8000 });
@@ -488,6 +489,51 @@ async function main(): Promise<void> {
     await G.click("button[type=submit]");
     await G.waitForSelector('[data-testid="group-code"]');
     check(((await G.textContent('[data-testid="group-code"]')) ?? "").trim() === eCode, "Gabung pada ajakan memasukkan Gita ke room pengirim");
+
+    // 6c. Fase 4: Live (Tonton), Komunitas, Toko
+    await E.click('[data-testid="tab-room"]');
+    await E.waitForSelector('[data-watch="on"]');
+    await E.click('[data-watch="on"]');
+    await E.waitForFunction(() => document.querySelector('[data-watch="on"]')?.getAttribute("aria-checked") === "true");
+    await E.waitForFunction(() => !(document.querySelector('button.btn.primary.big') as HTMLButtonElement | null)?.disabled);
+    await E.click("button.btn.primary.big");
+    await E.waitForSelector('[data-testid="board"], .ludo-board, [data-testid="ludo-board"]', { timeout: 10000 }).catch(() => undefined);
+    const H = await extra();
+    await H.goto(base);
+    await H.click('[data-testid="tab-profile"]');
+    await H.fill("#akun-user", "hana_e2e");
+    await H.fill("#akun-pass", "rahasia-e2e-789");
+    await H.click('[data-testid="account-submit"]');
+    await H.waitForSelector('[data-testid="account-user"]');
+    await H.click('[data-testid="tab-games"]');
+    await H.click('[data-section="live"]');
+    await H.waitForSelector('[data-testid="live-room"]', { timeout: 10000 });
+    check(!((await H.textContent('[data-testid="live-list"]')) ?? "").includes(eCode), "daftar Live tidak membocorkan kode kelompok");
+    await H.click('[data-testid="live-watch"]');
+    await H.waitForSelector('[data-testid="spectate-banner"]');
+    await H.waitForSelector('[data-testid="spectate"] .players, [data-testid="spectate"] [data-testid="board"]', { timeout: 10000 });
+    check((await H.locator('[data-testid="spectate"] [data-testid="nudge"]').count()) === 0, "penonton tidak punya tombol sundul");
+    check((await H.locator('[data-testid="spectate"] .hand, [data-testid="spectate"] [data-testid="hand"]').count()) === 0, "penonton tidak melihat kartu tangan");
+    await noHorizontalOverflow(H, "penonton");
+    await shot(H, "14-live-penonton");
+    await H.fill('[data-testid="watch-input"]', "seru nih");
+    await H.click('[data-testid="watch-send"]');
+    await H.waitForFunction(() => document.querySelector('[data-testid="watch-log"]')?.textContent?.includes("seru nih"));
+    check(true, "chat penonton tampil untuk penonton");
+    await H.click('[data-testid="unwatch"]');
+    await H.click('[data-section="komunitas"]');
+    await H.fill('[data-testid="compose"]', "Halo komunitas, ada yang main Ludo?");
+    await H.click('[data-testid="compose-send"]');
+    await H.waitForSelector('[data-testid="post"]');
+    check(((await H.textContent('[data-testid="feed"]')) ?? "").includes("Halo komunitas"), "kiriman Komunitas tampil di umpan");
+    await shot(H, "15-komunitas");
+    await H.click('[data-section="toko"]');
+    await H.waitForSelector('[data-testid="shop-sim"]');
+    await H.click('[data-testid="claim"]');
+    await H.waitForFunction(() => document.querySelector('[data-testid="koin"]')?.textContent?.includes("50"));
+    check(true, "klaim Koin simulasi harian menambah saldo");
+    await noHorizontalOverflow(H, "toko");
+    await shot(H, "16-toko");
 
     // 7. Tidak ada galat konsol, tidak ada permintaan ke pihak ketiga
     check(problems.length === 0, `tanpa galat konsol/halaman${problems.length ? `: ${problems.join(" | ")}` : ""}`);

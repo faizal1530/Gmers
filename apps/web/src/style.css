@@ -423,3 +423,23 @@ a { color: var(--accent); }
 .invite-card { align-self: center; max-width: 92%; background: var(--soft); border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; list-style: none; }
 .invite-card .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .th-notfriend { padding: 12px var(--gutter); text-align: center; }
+
+/* Fase 4: Komunitas, Toko, Live */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn.on { outline: 2px solid var(--accent, currentColor); }
+.post-head { display: flex; align-items: center; gap: 10px; }
+.post-text { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.reply p { margin: 2px 0; overflow-wrap: anywhere; }
+textarea.input { resize: vertical; min-height: 4.5rem; font: inherit; }
+.notice.info, .spectating > .notice { color: var(--ink); }
+.spectating [data-testid="nudge"], .spectating [data-testid="rematch"], .spectating .hand { display: none; }
+.die.skin-kayu-jati { background: #c68b4e; border-color: #7a4b1f; }
+.die.skin-kayu-jati .pip.on { background: #3b2310; }
+.die.skin-batik-biru { background: #dbe8ff; border-color: #1f3f8a; }
+.die.skin-batik-biru .pip.on { background: #1f3f8a; }
+.die.skin-neon { background: #0b0f1a; border-color: #19ffb0; box-shadow: 0 0 10px #19ffb0; }
+.die.skin-neon .pip.on { background: #19ffb0; }
+.avwrap { display: inline-flex; border-radius: 50%; padding: 3px; }
+.avwrap.avatar-bingkai-emas { background: linear-gradient(135deg, #f6d365, #c8921b); }
+.avwrap.avatar-bingkai-batik { background: repeating-linear-gradient(45deg, #5b3a1e, #5b3a1e 4px, #d9b27c 4px, #d9b27c 8px); }

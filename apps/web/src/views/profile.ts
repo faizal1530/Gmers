@@ -9,6 +9,8 @@ export interface ProfileOptions {
   account: AccountViewOptions;
   wallet: HTMLElement;
   name: string;
+  /** Id bingkai avatar terpasang (Toko), atau null. */
+  avatarFrame?: string | null;
   theme: ThemeMode;
   soundOn: boolean;
   onSound: (on: boolean) => void;
@@ -32,7 +34,7 @@ export function profileView(o: ProfileOptions): HTMLElement {
     h(
       "div",
       { class: "panel" },
-      h("div", { class: "me" }, avatar(o.name || "?", 0, "lg"), h("strong", {}, o.name || "-")),
+      h("div", { class: "me" }, h("span", { class: `avwrap${o.avatarFrame ? ` ${o.avatarFrame.replace(/_/g, "-")}` : ""}` }, avatar(o.name || "?", 0, "lg")), h("strong", {}, o.name || "-")),
       h(
         "form",
         {

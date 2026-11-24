@@ -114,6 +114,7 @@ export function mkState(o: {
   groupId?: string;
   gameId?: "gaple" | "ludo";
   ranked?: boolean;
+  watchable?: boolean;
   ludo?: import("@gmers/server/protocol").LudoView | null;
   deadline?: number | null;
   now?: number;
@@ -130,6 +131,8 @@ export function mkState(o: {
       phase,
       gameId: o.gameId ?? "gaple",
       ranked: o.ranked ?? false,
+      watchable: o.watchable ?? false,
+      spectators: 0,
       gameNo: phase === "lobby" ? 0 : 1,
       hostSeat: o.hostSeat ?? 0,
       maxSeats: 4,

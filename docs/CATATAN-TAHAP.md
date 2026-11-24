@@ -272,3 +272,22 @@ Server 167 (+31), klien 149 (+15 di `test/social.test.ts`), E2E Chromium: dua ak
 5. **Laporan hanya dicatat untuk ditinjau admin**; tidak ada penindakan otomatis (keputusan moderasi milik pemilik).
 
 **Keputusan pemilik (24 Nov 2026):** DM untuk teman offline tetap hanya ditahan di memori server (maks 24 jam, 50 pesan), tidak ditulis ke disk. Halaman privasi (draf) perlu menyebut ini sebelum rilis publik.
+
+## Rencana penuh dengan 2 game, Fase 4: Komunitas, Toko simulasi, Live (24 Nov 2026)
+
+### Dibangun
+- **Komunitas** (`community.ts`, `community.jsonl`): feed teks saja (maks 280 karakter, balasan 200), tab Untukmu / Mengikuti / Tersimpan, tiga komunitas tetap (Gaple, Ludo, Kampus Bandung), suka, simpan, balas, bagikan (menyalin teks), sembunyikan, laporkan (masuk `/admin/reports`), hapus milik sendiri, "Kenalan hari ini" (penulis aktif yang belum diikuti, urutan berganti harian). **Tanpa iklan, tanpa media, tautan ditolak** (anti-spam). Blokir menyembunyikan kiriman di kedua arah; hapus akun menghapus kiriman, suka, dan simpanannya. Batas harian 20 kiriman dan 60 balasan per akun.
+- **Toko SIMULASI** (`shop.ts`, `shop.jsonl`): Koin hanya dari klaim harian gratis (50 Koin per hari WIB, lewat ledger). Barang: skin dadu (Klasik gratis, Kayu Jati 80, Batik Biru 120, Neon 150), paket emoji (Meja Gaple 60, Drama Ludo 80), bingkai avatar (Emas 120, Batik 100). Beli lewat ledger (atomik, idempoten per barang, saldo tidak boleh negatif), pasang disimpan. Layar Toko selalu menampilkan penanda SIMULASI. **Tidak ada pembayaran uang nyata, tidak ada jalur Koin ke Tiket** (aturan 1). Skin dadu, paket emoji, dan bingkai avatar hanya tampak di perangkat pemiliknya.
+- **Live (Tonton):** pemilik room menyalakan "Boleh ditonton" di ruang tunggu. Penonton (wajib akun) memilih dari daftar Live memakai **kunci tonton** acak, bukan kode kelompok, sehingga daftar tidak membuka jalan untuk ikut duduk. Siaran **tertunda 30 detik** (`liveDelayMs`), tanpa kartu tangan, tanpa langkah sah, tanpa tombol sundul/lewat. Maks 50 penonton per room. Chat penonton hanya dilihat sesama penonton (tidak oleh pemain), dibatasi 1 pesan per 1,5 detik, tidak disimpan.
+- **Klien:** bagian Main/Komunitas/Live/Toko di tab Games (tab bawah tetap Chat, Games, Room, Profil).
+
+### Uji
+Server 188 (+21: validasi teks, aturan feed, blokir, batas harian, pemulihan dan purge, API Komunitas dan Toko, penundaan dan privasi siaran, batas penonton), klien 159 (+10), E2E Chromium: penonton melihat papan tertunda tanpa kartu tangan, chat penonton, kiriman Komunitas, klaim Koin. Pengujian menemukan kebocoran id akun internal di respons feed (`profileOf`); diperbaiki sebelum dipakai.
+
+### Keputusan otomatis (Fase 4)
+1. **Komunitas tetap tiga** dan tidak bisa dibuat pengguna; moderasi hanya lewat laporan yang dibaca admin (tidak ada penindakan otomatis).
+2. **Tautan ditolak** di kiriman dan balasan sampai ada kebijakan moderasi.
+3. **Koin simulasi** 50 per hari adalah angka tebakan; ubah di `shop.ts` (`DAILY_KOIN`). Jangan ubah menjadi pembelian uang tanpa keputusan hukum dan pembayaran.
+4. **Kosmetik hanya lokal:** pemain lain belum melihat skin atau bingkai milikmu (butuh perubahan protokol room).
+5. **Penundaan 30 detik** (batas bawah dari rentang 30-60 detik di rencana); room siaran memakai memori server, bingkai dibuang saat room dibersihkan.
+6. **Jumlah penonton dan chat penonton tidak masuk log JSONL.**
