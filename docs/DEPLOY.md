@@ -34,7 +34,23 @@ openssl rand -hex 32
 
 Jalankan dua kali: satu untuk `ADMIN_TOKEN`, satu untuk `HASH_SALT`. **Jangan menulis nilai ini di berkas repo, chat, atau dokumen.** Simpan hanya di pengaturan variabel layanan hosting dan di pengelola kata sandi Anda.
 
-## 3. Opsi A: layanan hosting yang menjalankan Dockerfile
+## 3. Railway (jalur utama)
+
+Konfigurasi sebagai kode ada di `railway.toml` (builder Dockerfile, healthcheck `/healthz`, restart saat gagal, 1 replika). Region dan Volume diatur di dasbor/CLI.
+
+**Peringatan paket:** paket Free membuat layanan tidur dan menghentikan WebSocket sehingga game terputus. Uji kelompok butuh paket yang selalu menyala. Akun Trial menghapus volume 30 hari setelah kredit habis.
+
+1. Di dasbor Railway: **New Project > Deploy from GitHub repo** > `faizal1530/Gmers`, cabang `main`. Railway membaca `railway.toml` dan membangun dengan `Dockerfile`.
+2. Satu layanan saja, **1 replika** (jangan naikkan). Jangan tambah Postgres/Redis/add-on.
+3. **Settings > Region**: pilih Southeast Asia (Singapura).
+4. **Volume**: klik kanan layanan > Attach Volume, mount path `/data`. Set `DATA_DIR=/data`.
+5. **Variables**: `ADMIN_TOKEN` dan `HASH_SALT` (acak, `openssl rand -hex 32`, masing-masing), `DATA_DIR=/data`. `PORT` diisi Railway sendiri.
+6. **Settings > Networking > Generate Domain** (domain bawaan, bukan domain kustom).
+7. Lakukan uji asap (bagian 8).
+
+Log: tab **Deployments > View Logs**. Mulai ulang: menu titik tiga deployment > Restart. Ekspor CSV: lihat bagian 6 dengan `ADMIN_TOKEN` yang dibaca dari tab Variables. Cadangan rutin: bagian 7.
+
+## 3b. Opsi lain: layanan hosting yang menjalankan Dockerfile
 
 Cocok bila Anda tidak mau mengurus server sendiri. Syaratnya layanan harus bisa: membangun dari `Dockerfile` di repo, memasang disk bertahan (Volume), mengatur jumlah instance = 1, menjalankan WebSocket, dan memberi HTTPS otomatis. Periksa syarat itu di dokumentasi layanan yang Anda pilih sebelum membayar. (Tahap E akan menyiapkan langkah khusus untuk Railway; bagian ini sengaja umum.)
 
