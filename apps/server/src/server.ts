@@ -6,6 +6,8 @@ import { z } from "zod";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AccountService, FileAccountLog, isAuthError, type AccountLog } from "./accounts";
 import { realClock } from "./clock";
+import { COMMUNITIES, Community, FileCommunityLog, type CommunityLog } from "./community";
+import { FileShopLog, Shop, type ShopLog } from "./shop";
 import { Ledger, FileLedgerLog, type LedgerLog } from "./ledger";
 import { Progress } from "./progress";
 import { FileSocialLog, Social, type SocialLog, type Status } from "./social";
@@ -24,6 +26,8 @@ export interface GmersServer {
   progress: Progress;
   social: Social;
   hub: SocialHub;
+  community: Community;
+  shop: Shop;
   close(): Promise<void>;
 }
 
@@ -31,6 +35,8 @@ export interface ServerDeps extends ServiceDeps {
   accountLog?: AccountLog;
   ledgerLog?: LedgerLog;
   socialLog?: SocialLog;
+  communityLog?: CommunityLog;
+  shopLog?: ShopLog;
   log?: RoomLog;
   events?: EventSink;
 }
@@ -42,11 +48,27 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   let service: RoomService;
   // eslint-disable-next-line prefer-const -- dideklarasikan lebih dulu karena dipakai closure sebelum diisi
   let social: Social;
-  const accounts = new AccountService(config, deps.accountLog ?? new FileAccountLog(join(config.dataDir, config.accountsFile)), deps.clock ?? realClock, (h) => service.groupsOf(h), (id) => social.purge(id));
+  // eslint-disable-next-line prefer-const -- sama: dipakai closure penghapusan akun sebelum dibuat
+  let community: Community;
+  const accounts = new AccountService(config, deps.accountLog ?? new FileAccountLog(join(config.dataDir, config.accountsFile)), deps.clock ?? realClock, (h) => service.groupsOf(h), (id) => {
+    social.purge(id);
+    community.purge(id);
+  });
   const clock = deps.clock ?? realClock;
   const ledger = new Ledger(deps.ledgerLog ?? new FileLedgerLog(join(config.dataDir, config.ledgerFile)), () => clock.now());
   const progress = new Progress(ledger, config.economy);
   social = new Social(deps.socialLog ?? new FileSocialLog(join(config.dataDir, config.socialFile)), clock);
+  community = new Community({
+    log: deps.communityLog ?? new FileCommunityLog(join(config.dataDir, config.communityFile)),
+    clock,
+    profileOf: (id) => {
+      const p = accounts.profileOf(id);
+      return p ? { username: p.username, name: p.name } : null; // id akun internal tidak boleh keluar
+    },
+    isBlocked: (a, b) => social.isBlocked(a, b),
+    follows: (a, b) => social.relation(a, b).iFollow,
+  });
+  const shop = new Shop(ledger, deps.shopLog ?? new FileShopLog(join(config.dataDir, config.shopFile)), clock);
   const hub = new SocialHub(config, clock, social, accounts, (c) => service.roomOfConn(c as never));
   service = new RoomService(config, {
     ...deps,
@@ -71,7 +93,7 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   const http: HttpServer = createHttpServer((req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
     if (path.startsWith("/api/") || path === "/admin/accounts/reset" || path === "/admin/reports") {
-      handleApi({ config, accounts, progress, social, hub }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
+      handleApi({ config, accounts, progress, social, hub, community, shop, service }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
       return;
     }
     try {
@@ -162,6 +184,8 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
     progress,
     social,
     hub,
+    community,
+    shop,
     async close() {
       cancelReminders();
       clearInterval(heartbeat);
@@ -306,6 +330,10 @@ const schemas = {
   report: z.object({ kind: z.enum(["user", "post"]), target: z.string().trim().min(1).max(60), reason: z.string().trim().max(300).optional() }).strict(),
   status: z.object({ status: z.enum(["siap", "sibuk", "senyap", "dnd"]) }).strict(),
   prefs: z.object({ invite: z.boolean().optional(), follow: z.boolean().optional(), streak: z.boolean().optional(), dm: z.boolean().optional() }).strict(),
+  post: z.object({ text: z.string().max(2000), comm: z.string().max(20).nullable().optional() }).strict(),
+  reply: z.object({ text: z.string().max(1000) }).strict(),
+  toggle: z.object({ on: z.boolean() }).strict(),
+  item: z.object({ item: z.string().trim().min(1).max(40) }).strict(),
   reset: z.object({ username: z.string().trim().min(1).max(40), newPassword: passwordS }).strict(),
 };
 
@@ -329,6 +357,9 @@ function bearer(req: IncomingMessage): string | null {
 }
 
 interface ApiCtx {
+  community: Community;
+  shop: Shop;
+  service: RoomService;
   config: ServerConfig;
   accounts: AccountService;
   progress: Progress;
@@ -337,7 +368,7 @@ interface ApiCtx {
 }
 
 async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-  const { config, accounts, progress, social, hub } = ctx;
+  const { config, accounts, progress, social, hub, community, shop, service } = ctx;
   const method = req.method ?? "GET";
   try {
     if (path === "/admin/reports") {
@@ -365,6 +396,61 @@ async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse,
       const id = accounts.idOfSession(sess);
       return id ? progress.wallet(id) : null;
     };
+    const meId = accounts.idOfSession(session);
+    if (path === "/api/communities" || path === "/api/feed" || path.startsWith("/api/posts") || path.startsWith("/api/replies") || path.startsWith("/api/shop") || path === "/api/live") {
+      if (!meId) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+      const fail = (r: { code: string; message: string }): void => sendJson(res, r.code === "NOT_FOUND" ? 404 : r.code === "RATE_LIMIT" ? 429 : r.code === "INSUFFICIENT" ? 402 : 400, { code: r.code, message: r.message });
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (route === "GET /api/communities") return sendJson(res, 200, { communities: COMMUNITIES });
+      if (route === "GET /api/feed") {
+        const tab = url.searchParams.get("tab") ?? "untukmu";
+        const comm = url.searchParams.get("comm");
+        const bf = Number(url.searchParams.get("before"));
+        if (!["untukmu", "mengikuti", "tersimpan"].includes(tab) || (comm !== null && !COMMUNITIES.some((c) => c.id === comm))) return sendJson(res, 400, { code: "BAD_REQUEST", message: "Data tidak valid." });
+        const feed = community.feed(meId, tab as "untukmu" | "mengikuti" | "tersimpan", comm, Number.isFinite(bf) && bf > 0 ? bf : null);
+        return sendJson(res, 200, { ...feed, suggestions: tab === "untukmu" && !comm && !url.searchParams.has("before") ? community.suggestions(meId) : [] });
+      }
+      if (route === "POST /api/posts") {
+        const b = parseBody(schemas.post, await readJson(req));
+        const r = community.post(meId, b.text, b.comm ?? null);
+        return r.ok ? sendJson(res, 200, r) : fail(r);
+      }
+      const m = /^\/api\/(posts|replies)\/([0-9a-f]{12})(?:\/(replies|like|save|hide))?$/.exec(path);
+      if (m) {
+        const [, kind, pid, action] = m as unknown as [string, string, string, string | undefined];
+        if (method === "GET" && kind === "posts" && !action) {
+          const r = community.replies(meId, pid);
+          return r ? sendJson(res, 200, r) : fail({ code: "NOT_FOUND", message: "Kiriman tidak ditemukan." });
+        }
+        if (method === "DELETE" && !action) {
+          const r = community.remove(meId, pid);
+          return r.ok ? sendJson(res, 200, r) : fail(r);
+        }
+        if (method === "POST" && kind === "posts") {
+          if (action === "replies") {
+            const b = parseBody(schemas.reply, await readJson(req));
+            const r = community.reply(meId, pid, b.text);
+            return r.ok ? sendJson(res, 200, r) : fail(r);
+          }
+          if (action === "like" || action === "save") {
+            const b = parseBody(schemas.toggle, await readJson(req));
+            const r = action === "like" ? community.like(meId, pid, b.on) : community.save(meId, pid, b.on);
+            return r.ok ? sendJson(res, 200, r) : fail(r);
+          }
+          if (action === "hide") {
+            const r = community.hide(meId, pid);
+            return r.ok ? sendJson(res, 200, r) : fail(r);
+          }
+        }
+      }
+      if (route === "GET /api/shop") return sendJson(res, 200, shop.state(meId));
+      if (route === "POST /api/shop/claim" || route === "POST /api/shop/buy" || route === "POST /api/shop/equip") {
+        const r = route.endsWith("claim") ? shop.claim(meId) : route.endsWith("buy") ? shop.buy(meId, parseBody(schemas.item, await readJson(req)).item) : shop.equip(meId, parseBody(schemas.item, await readJson(req)).item);
+        return r.ok ? sendJson(res, 200, { ok: true, shop: shop.state(meId), wallet: progress.wallet(meId) }) : sendJson(res, r.code === "INSUFFICIENT" ? 402 : r.code === "NOT_FOUND" ? 404 : 409, { code: r.code, message: r.message });
+      }
+      if (route === "GET /api/live") return sendJson(res, 200, { rooms: service.liveList() });
+    }
+
     switch (route) {
       case "POST /api/register": {
         const b = parseBody(schemas.register, await readJson(req));

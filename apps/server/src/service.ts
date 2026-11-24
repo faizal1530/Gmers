@@ -71,6 +71,11 @@ export interface Room {
   gameNo: number;
   game: ActiveGame | null;
   lastWinnerSeat: number | null;
+  /** Live: room boleh ditonton, kunci tonton (bukan kode kelompok), penonton, dan bingkai tertunda. */
+  watchable: boolean;
+  watchKey: string;
+  spectators: Map<Conn, { name: string; lastChat: number }>;
+  frames: { ts: number; msg: StateMessage }[];
 }
 
 /** Kaitan ke layanan akun dan ekonomi. Semua opsional: tanpa kaitan, room berjalan sebagai tamu semua. */
@@ -187,6 +192,7 @@ export class RoomService {
       const anyConnected = room.seats.some((m) => m?.conn);
       if (!anyConnected && now - room.lastActivity > this.cfg.roomIdleTtlMs) {
         room.game?.cancelTimer?.();
+        this.endWatch(room, "closed");
         this.log.append({ t: "closed", roomId: room.id, ts: now });
         this.rooms.delete(room.id);
         const group = this.groups.get(room.groupId);
@@ -282,6 +288,8 @@ export class RoomService {
 
   // ---------- pembantu room ----------
 
+  private readonly watching = new Map<Conn, Room>();
+
   private blankRoom(id: string, groupId: string, ts: number): Room {
     return {
       id,
@@ -296,6 +304,10 @@ export class RoomService {
       gameNo: 0,
       game: null,
       lastWinnerSeat: null,
+      watchable: false,
+      watchKey: randomBytes(5).toString("hex"),
+      spectators: new Map(),
+      frames: [],
     };
   }
 
@@ -383,6 +395,8 @@ export class RoomService {
         phase: room.phase,
         gameId: room.gameId,
         ranked: room.ranked,
+        watchable: room.watchable,
+        spectators: room.spectators.size,
         gameNo: room.gameNo,
         hostSeat: room.hostSeat,
         maxSeats: this.cfg.maxSeats,
@@ -406,6 +420,116 @@ export class RoomService {
 
   private broadcast(room: Room): void {
     for (const m of room.seats) m?.conn?.send(this.view(room, m));
+    if (room.watchable) this.pushFrame(room);
+  }
+
+  // ---------- Live (penonton) ----------
+
+  /** Tampilan publik: tanpa kartu tangan siapa pun, tanpa langkah sah, tanpa batas waktu giliran. */
+  private spectatorView(room: Room): StateMessage {
+    const base = this.view(room, { seat: -1, tokenHash: "", name: "", conn: null, chatTimes: [], lastNudge: null } as Member);
+    return {
+      ...base,
+      now: this.clock.now(),
+      room: { ...base.room, seats: base.room.seats.map((s) => (s ? { ...s, isYou: false } : null)) },
+      you: { seat: -1 },
+      game: base.game ? { ...base.game, yourHand: [], yourMoves: [], turnDeadline: null } : null,
+      spectating: true,
+    };
+  }
+
+  /** Simpan bingkai sekarang dan kirim ke penonton setelah penundaan (cegah curang lewat penonton). */
+  private pushFrame(room: Room): void {
+    const frame = { ts: this.clock.now(), msg: this.spectatorView(room) };
+    room.frames.push(frame);
+    if (room.frames.length > 40) room.frames.splice(0, room.frames.length - 40);
+    this.clock.setTimeout(() => {
+      if (this.stopped || !this.rooms.has(room.id) || !room.watchable) return;
+      for (const c of room.spectators.keys()) c.send({ ...frame.msg, now: this.clock.now() });
+    }, this.cfg.liveDelayMs);
+  }
+
+  private endWatch(room: Room, reason: "closed" | "off"): void {
+    for (const c of room.spectators.keys()) {
+      this.watching.delete(c);
+      c.send({ type: "watch_end", reason });
+    }
+    room.spectators.clear();
+    room.frames = [];
+  }
+
+  /** Daftar room yang boleh ditonton dan sedang bermain. Memakai kunci tonton, bukan kode kelompok. */
+  liveList(): { key: string; game: GameId; ranked: boolean; players: string[]; spectators: number }[] {
+    const out: { key: string; game: GameId; ranked: boolean; players: string[]; spectators: number }[] = [];
+    for (const r of this.rooms.values()) {
+      if (!r.watchable || r.phase !== "playing") continue;
+      out.push({ key: r.watchKey, game: r.gameId, ranked: r.ranked, players: r.seats.flatMap((m) => (m ? [m.name] : [])), spectators: r.spectators.size });
+    }
+    return out;
+  }
+
+  private setWatch(conn: Conn, room: Room, member: Member, on: boolean): void {
+    if (member.seat !== room.hostSeat) {
+      conn.send(err("NOT_HOST", "Hanya pembuat room yang bisa mengatur siaran."));
+      return;
+    }
+    if (room.watchable !== on) {
+      room.watchable = on;
+      if (!on) this.endWatch(room, "off");
+    }
+    this.broadcast(room);
+  }
+
+  private watch(conn: Conn, key: string): void {
+    if (!conn.account) {
+      conn.send(err("NOT_LOGGED_IN", "Masuk atau daftar dulu untuk menonton."));
+      return;
+    }
+    if (this.contextOf(conn)) {
+      conn.send(err("IN_ROOM", "Kamu sedang duduk di sebuah room."));
+      return;
+    }
+    const room = [...this.rooms.values()].find((r) => r.watchKey === key && r.watchable);
+    if (!room || room.phase === "lobby") {
+      conn.send(err("NOT_FOUND", "Siaran tidak ditemukan atau sudah selesai."));
+      return;
+    }
+    this.unwatch(conn, false);
+    if (room.spectators.size >= this.cfg.liveMaxSpectators) {
+      conn.send(err("WATCH_FULL", "Penonton room ini sudah penuh."));
+      return;
+    }
+    room.spectators.set(conn, { name: conn.account.name, lastChat: 0 });
+    this.watching.set(conn, room);
+    const due = this.clock.now() - this.cfg.liveDelayMs;
+    const frame = [...room.frames].reverse().find((f) => f.ts <= due);
+    conn.send({ type: "watching", key, delayMs: this.cfg.liveDelayMs, hasFrame: !!frame });
+    if (frame) conn.send({ ...frame.msg, now: this.clock.now() });
+  }
+
+  private unwatch(conn: Conn, notify: boolean): void {
+    const room = this.watching.get(conn);
+    if (!room) return;
+    room.spectators.delete(conn);
+    this.watching.delete(conn);
+    if (notify) conn.send({ type: "watch_end", reason: "left" });
+  }
+
+  /** Chat penonton: hanya dibagikan ke sesama penonton, tidak pernah ke pemain; tidak disimpan. */
+  private watchChat(conn: Conn, text: string): void {
+    const room = this.watching.get(conn);
+    const sp = room?.spectators.get(conn);
+    if (!room || !sp) {
+      conn.send(err("NOT_WATCHING", "Kamu tidak sedang menonton."));
+      return;
+    }
+    const now = this.clock.now();
+    if (now - sp.lastChat < this.cfg.liveChatMinMs) {
+      conn.send(err("RATE_LIMIT", "Terlalu cepat. Tunggu sebentar."));
+      return;
+    }
+    sp.lastChat = now;
+    for (const c of room.spectators.keys()) c.send({ type: "watch_chat", name: sp.name, text, ts: now });
   }
 
   // ---------- timer giliran ----------
@@ -504,6 +628,12 @@ export class RoomService {
       case "invite_reply":
         this.hooks.social?.handle(conn, msg);
         return;
+      case "watch":
+        return this.watch(conn, msg.key);
+      case "unwatch":
+        return this.unwatch(conn, true);
+      case "watch_chat":
+        return this.watchChat(conn, msg.text);
       case "create_room":
         return this.createGroup(conn, msg.name, msg.token, msg.game);
       case "open_link":
@@ -533,6 +663,8 @@ export class RoomService {
         return this.setGame(conn, room, member, msg.game);
       case "set_ranked":
         return this.setRanked(conn, room, member, msg.on);
+      case "set_watch":
+        return this.setWatch(conn, room, member, msg.on);
       case "play":
       case "pass":
       case "roll":
@@ -945,6 +1077,7 @@ export class RoomService {
 
   onDisconnect(conn: Conn): void {
     this.matchmaker.dropConn(conn);
+    this.unwatch(conn, false);
     this.hooks.social?.detach(conn);
     const ctx = this.contextOf(conn);
     conn.session = null;

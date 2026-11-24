@@ -30,6 +30,10 @@ export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMinLength" 
     z.object({ type: z.literal("pick"), pawn: z.number().int().min(0).max(3) }).strict(),
     z.object({ type: z.literal("set_game"), game: z.enum(["gaple", "ludo"]) }).strict(),
     z.object({ type: z.literal("set_ranked"), on: z.boolean() }).strict(),
+    z.object({ type: z.literal("set_watch"), on: z.boolean() }).strict(),
+    z.object({ type: z.literal("watch"), key: z.string().regex(/^[0-9a-f]{10}$/) }).strict(),
+    z.object({ type: z.literal("unwatch") }).strict(),
+    z.object({ type: z.literal("watch_chat"), text: z.string().trim().min(1).max(cfg.chatMaxLength).regex(noControl) }).strict(),
     z.object({ type: z.literal("auth"), session: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
     z.object({ type: z.literal("queue_ranked"), game: z.enum(["gaple", "ludo"]) }).strict(),
     z.object({ type: z.literal("cancel_queue") }).strict(),
@@ -119,6 +123,10 @@ export interface StateMessage {
     gameId: GameId;
     /** Room Ranked: Trofi berubah di akhir game. Hanya untuk pemain yang semuanya punya akun. */
     ranked: boolean;
+    /** Room boleh ditonton (Live). */
+    watchable: boolean;
+    /** Jumlah penonton saat ini (hanya angka). */
+    spectators: number;
     gameNo: number;
     hostSeat: number;
     maxSeats: number;
@@ -126,6 +134,8 @@ export interface StateMessage {
   };
   you: { seat: number };
   game: GameView | null;
+  /** Hanya pada tampilan penonton: tertunda, tanpa kartu di tangan pemain. */
+  spectating?: true;
 }
 
 export type ServerMessage =
@@ -138,6 +148,9 @@ export type ServerMessage =
   | { type: "invite"; id: string; from: { username: string; name: string }; game: GameId; groupId: string; expiresAt: number; silent: boolean }
   | { type: "invite_result"; id: string; to: { username: string; name: string }; reply: "sent" | "join" | "later" | "busy" | "auto_busy" | "expired" }
   | { type: "notice"; id: string; kind: "follow" | "invite" | "streak" | "dm"; text: string; ts: number }
+  | { type: "watching"; key: string; delayMs: number; hasFrame: boolean }
+  | { type: "watch_end"; reason: "closed" | "off" | "left" }
+  | { type: "watch_chat"; name: string; text: string; ts: number }
   | { type: "auth_ok"; username: string; name: string }
   | { type: "queue"; state: "waiting" | "idle"; game: GameId | null; since: number | null }
   | { type: "match_found"; groupId: string }

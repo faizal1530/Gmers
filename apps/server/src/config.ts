@@ -34,6 +34,12 @@ export interface ServerConfig {
   ledgerFile: string;
   /** Hubungan sosial (ikuti, kontak, blokir, status, streak, laporan). */
   socialFile: string;
+  communityFile: string;
+  shopFile: string;
+  /** Penundaan siaran Live untuk penonton (cegah curang lewat penonton) dan batas penonton per room. */
+  liveDelayMs: number;
+  liveMaxSpectators: number;
+  liveChatMinMs: number;
   /** Masa berlaku undangan main (spek 7.2: 15 menit untuk live). */
   inviteTtlMs: number;
   /** Pesan 1-1 yang menunggu penerima offline (hanya di memori, tidak pernah ke disk). */
@@ -86,6 +92,11 @@ export const defaultServerConfig: ServerConfig = {
   accountsFile: "accounts.jsonl",
   ledgerFile: "ledger.jsonl",
   socialFile: "social.jsonl",
+  communityFile: "community.jsonl",
+  shopFile: "shop.jsonl",
+  liveDelayMs: 30_000,
+  liveMaxSpectators: 50,
+  liveChatMinMs: 1500,
   inviteTtlMs: 15 * 60 * 1000,
   dmPendingMax: 50,
   dmPendingTtlMs: 24 * 60 * 60 * 1000,
