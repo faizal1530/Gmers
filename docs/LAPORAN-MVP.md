@@ -90,3 +90,32 @@ Variabel lingkungan server dan langkah deploy: `docs/DEPLOY.md`.
 ## 7. Cara membaca hasil penghitung
 
 Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain minimal 3 perangkat), `Aktif` (dua hari sah dalam jendela 14 hari), `Game pertama selesai`, `Tautan dibuka` dan `Masuk` (perangkat yang membuka tautan lalu duduk), `Main lagi <=7 hari` (game selesai di hari WIB berbeda, 1 sampai 7 hari setelah game pertama; rematch di hari yang sama tidak dihitung). Ambang MVP: minimal **4 dari 10** kelompok aktif = asumsi bertahan; 1 sampai 3 = perbaiki satu putaran; 0 = pivot. Pagar: minimal 6 dari 10 kelompok menyelesaikan sesi pertama tanpa bantuan kita.
+
+## 8. Tahap E: deploy ke Railway (24 Nov 2026)
+
+**Status: tayang.** URL publik: https://gmers-production.up.railway.app (domain bawaan Railway). Proyek `gmers`, satu layanan `gmers`, satu Volume di `/data`, satu replika di region Southeast Asia.
+
+**Paket Railway:** tidak bisa dideteksi lewat CLI. Periksa di dasbor (Settings > Usage/Plan). Bila bukan paket yang selalu menyala, **uji kelompok harus menunggu Anda pindah paket**: paket Free menidurkan layanan dan memutus WebSocket; akun Trial menghapus volume 30 hari setelah kredit habis.
+
+**Hasil uji asap (dari luar, lewat internet):**
+- `GET /healthz`: lulus (200 `ok`).
+- `GET /`: lulus (200).
+- `GET /admin/events.csv` tanpa token dan dengan token salah: lulus (401).
+- Klien WebSocket: buat kelompok, duduk dua bot, mainkan satu game sampai selesai (`blocked`, 16 langkah): lulus.
+- CSV dengan `ADMIN_TOKEN`: lulus; memuat `group_created`, `player_joined` x2, `game_started`, `game_finished`.
+- Redeploy/restart dan pemulihan: lihat catatan di bawah.
+
+**Variabel yang diatur (nilai hanya di dasbor Railway > Variables):** `ADMIN_TOKEN`, `HASH_SALT` (acak 32 byte, dibuat dengan `openssl rand -hex 32`), `DATA_DIR=/data`. `PORT` diisi Railway.
+
+**Keputusan otomatis (perlu ditinjau):**
+1. Dockerfile diubah: kontainer mulai sebagai root, menjalankan `chown -R node:node /data`, lalu server berjalan sebagai `node` lewat `setpriv`. Alasan: Volume Railway dipasang milik root dan server non-root gagal menulis (`EACCES` di `/data/events.csv`). Alternatif: variabel `RAILWAY_RUN_UID=0` (server jalan sebagai root; ditolak).
+2. Region diatur lewat CLI (`railway service scale southeast-asia=1 sfo=0`): Railway awalnya menambah replika kedua di `sfo`; sudah dinolkan, sekarang 1 replika.
+3. `railway.toml` hanya memuat kunci yang pasti: builder, healthcheck, restart, `numReplicas`. Region tidak ditulis di file.
+4. Build Dockerfile diuji sungguhan oleh Railway (bukan lokal; Mac ini tidak punya Docker).
+
+**Perlu tindakan Faizal:**
+1. Cek paket Railway; naik ke paket yang selalu menyala sebelum uji kelompok.
+2. Baca `ADMIN_TOKEN` dari dasbor Railway > gmers > Variables, simpan di pengelola kata sandi.
+3. Coba di HP Android asli (tautan dari WhatsApp, pindah WiFi ke data seluler).
+4. Uji dua kelompok percobaan, lalu jalankan `pnpm hitung`.
+5. Tinjauan hukum kebijakan privasi.

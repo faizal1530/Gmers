@@ -135,3 +135,11 @@ Total 20 keputusan, semuanya bisa diubah tanpa membongkar arsitektur:
 - Tahap B (5): "Keputusan yang saya ambil (default)" di bagian Tahap B di atas.
 - Tahap C (7): "Keputusan otomatis (Tahap C)".
 - Tahap D (8): "Keputusan otomatis (Tahap D)".
+
+## Tahap E: deploy Railway (24 Nov 2026)
+
+### Keputusan otomatis (Tahap E)
+1. Dockerfile mulai sebagai root, `chown /data`, lalu `setpriv` ke pengguna `node` (Volume Railway milik root; server non-root gagal menulis). Alternatif `RAILWAY_RUN_UID=0` ditolak.
+2. Satu replika di Southeast Asia; replika `sfo` otomatis dinolkan lewat `railway service scale`.
+3. `railway.toml` hanya berisi kunci yang pasti; region diatur di CLI/dasbor.
+4. Domain bawaan Railway; tanpa domain kustom, tanpa add-on.
