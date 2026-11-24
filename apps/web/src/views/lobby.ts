@@ -7,6 +7,7 @@ import { avatar } from "./avatar";
 export interface LobbyActions {
   onStart: () => void;
   onLeave: () => void;
+  onSetGame: (game: "gaple" | "ludo") => void;
   onCopy: (url: string) => Promise<boolean>;
   origin: string;
 }
@@ -47,6 +48,14 @@ export function lobbyView(s: StateMessage, a: LobbyActions): HTMLElement {
         h("a", { class: "btn wa", href: whatsappLink(id.lobby.shareText(url)), target: "_blank", rel: "noopener noreferrer" }, id.lobby.whatsapp),
       ),
       copyNote,
+    ),
+    h(
+      "div",
+      { class: "panel", "data-testid": "game-pick" },
+      h("h2", {}, id.gamePick.label),
+      isHost
+        ? h("div", { class: "seg", role: "radiogroup", "aria-label": id.gamePick.label }, (["gaple", "ludo"] as const).map((g) => h("button", { type: "button", role: "radio", class: `seg-btn${s.room.gameId === g ? " on" : ""}`, "aria-checked": String(s.room.gameId === g), "data-game": g, onclick: () => a.onSetGame(g) }, id.gamePick[g])))
+        : h("p", { class: "game-label", "data-testid": "game-label" }, id.gamePick[s.room.gameId], " · ", id.gamePick.note),
     ),
     h(
       "div",

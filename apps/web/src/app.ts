@@ -12,6 +12,7 @@ import { ChatStore, type StoredMsg } from "./chatstore";
 import { ChatHub } from "./views/chathub";
 import { gamesView } from "./views/games";
 import { lobbyView } from "./views/lobby";
+import { ludoView } from "./views/ludo";
 import { errorView, notFoundView, privacyView } from "./views/misc";
 import { tabBar, type Tab } from "./views/nav";
 import { profileView } from "./views/profile";
@@ -21,7 +22,7 @@ import { nameForm } from "./views/forms";
 
 type Intent =
   | { kind: "none" }
-  | { kind: "create"; name: string }
+  | { kind: "create"; name: string; game: "gaple" | "ludo" }
   | { kind: "open"; groupId: string }
   | { kind: "join"; groupId: string; name: string };
 
@@ -78,6 +79,28 @@ export function describeLastMove(prev: StateMessage | null, next: StateMessage):
   if (pb.length === 0) return { kind: "open", seat, name, card: nb[0] as Card, side: "left" };
   const leftChanged = (nb[0] as Card)[0] !== (pb[0] as Card)[0] || (nb[0] as Card)[1] !== (pb[0] as Card)[1];
   return leftChanged ? { kind: "play", seat, name, card: nb[0] as Card, side: "left" } : { kind: "play", seat, name, card: nb[nb.length - 1] as Card, side: "right" };
+}
+
+/** Langkah Ludo terakhir dari selisih dua state: lemparan dadu, bidak digerakkan, atau bidak dimakan. */
+export function describeLudoMove(prev: StateMessage | null, next: StateMessage): { text: string; sound: "dice" | "capture" | "place" } | null {
+  const pl = prev?.game?.ludo;
+  const nl = next.game?.ludo;
+  if (!prev?.game || !pl || !nl || !next.game) return null;
+  if (prev.room.id !== next.room.id || prev.room.gameNo !== next.room.gameNo) return null;
+  if (next.game.moveCount <= prev.game.moveCount) return null;
+  const seat = prev.game.turn;
+  const name = next.room.seats[seat]?.name ?? "";
+  if (pl.dice === null) {
+    // sebelumnya belum melempar: langkah itu adalah lemparan dadu
+    const value = nl.lastRoll?.value ?? 0;
+    const stuck = nl.dice === null;
+    return { text: id.ludo.rolled(name, value) + (stuck ? ` · ${id.ludo.noMove}` : ""), sound: "dice" };
+  }
+  if (nl.lastCapture.length > 0) return { text: id.ludo.captured(name), sound: "capture" };
+  const before = pl.players.find((p) => p.seat === seat)?.pawns ?? [];
+  const after = nl.players.find((p) => p.seat === seat)?.pawns ?? [];
+  const pawn = after.findIndex((p, i) => p !== before[i]);
+  return { text: id.ludo.moved(name, pawn + 1), sound: "place" };
 }
 
 export class App {
@@ -294,7 +317,7 @@ export class App {
   private openMessages(): ClientMessage[] {
     const token = this.identity.token();
     const i = this.intent;
-    if (i.kind === "create") return [{ type: "create_room", name: i.name, token }];
+    if (i.kind === "create") return [{ type: "create_room", name: i.name, token, game: i.game }];
     if (i.kind === "open") return [{ type: "open_link", groupId: i.groupId, token }];
     if (i.kind === "join") return [{ type: "join", groupId: i.groupId, name: i.name, token }];
     return [];
@@ -372,7 +395,8 @@ export class App {
     this.recordConversation(prev, m);
 
     // Suara dan catatan langkah dari selisih state.
-    const move = describeLastMove(prev, m);
+    const move = m.game?.kind === "ludo" ? null : describeLastMove(prev, m);
+    const lmove = m.game?.kind === "ludo" ? describeLudoMove(prev, m) : null;
     const phaseNow = m.room.phase;
     const newGame = !!prev && phaseNow === "playing" && (prev.room.phase !== "playing" || prev.room.gameNo !== m.room.gameNo);
     if (newGame) {
@@ -387,6 +411,13 @@ export class App {
       this.sound.play(move.kind === "pass" ? "pass" : "place");
       if (phaseNow === "playing" && isMyTurn(m) && !(prev && isMyTurn(prev))) {
         setTimeout(() => this.sound.play("turn"), 220);
+        haptic(this.sound, 30);
+      }
+    } else if (lmove) {
+      this.lastMove = { side: null, text: lmove.text };
+      this.sound.play(lmove.sound);
+      if (phaseNow === "playing" && isMyTurn(m) && !(prev && isMyTurn(prev))) {
+        setTimeout(() => this.sound.play("turn"), 260);
         haptic(this.sound, 30);
       }
     } else if (phaseNow === "playing" && prev && isMyTurn(m) && !isMyTurn(prev)) {
@@ -470,10 +501,10 @@ export class App {
 
   // ---------- aksi ----------
 
-  private create(name: string): void {
+  private create(name: string, game: "gaple" | "ludo" = "gaple"): void {
     this.identity.setName(name);
     this.busy = true;
-    this.intent = { kind: "create", name };
+    this.intent = { kind: "create", name, game };
     this.render(true);
     this.flush();
   }
@@ -669,7 +700,7 @@ export class App {
           initialName: this.identity.name() ?? "",
           busy: this.busy,
           roomCode: this.room?.room.groupId ?? null,
-          onCreate: (n) => this.create(n),
+          onCreate: (n, g) => this.create(n, g),
           onBackToRoom: () => this.selectTab("room"),
         });
       case "room":
@@ -776,6 +807,7 @@ export class App {
         onCopy: this.copy,
         onStart: () => this.sendMsg({ type: "start" }),
         onLeave: () => this.sendMsg({ type: "leave" }),
+        onSetGame: (game) => this.sendMsg({ type: "set_game", game }),
       });
     }
     if (s.room.phase === "finished") {
@@ -783,6 +815,21 @@ export class App {
         this.busy = true;
         this.sendMsg({ type: "rematch" });
         this.render(false);
+      });
+    }
+    if (s.game?.kind === "ludo") {
+      return ludoView(s, {
+        connected,
+        nudgeCooling: Date.now() < this.nudgeUntil,
+        lastMoveText: this.lastMove?.text ?? null,
+        diceSkin: "skin-klasik",
+        onRoll: () => {
+          if (s.game?.yourMoves.some((m) => m.type === "roll") && isMyTurn(s)) this.sendMsg({ type: "roll" });
+        },
+        onPick: (pawn) => {
+          if (s.game?.yourMoves.some((m) => m.type === "pick" && m.pawn === pawn) && isMyTurn(s)) this.sendMsg({ type: "pick", pawn });
+        },
+        onNudge: () => this.nudge(),
       });
     }
     if (this.pendingCard && !(isMyTurn(s) && s.game?.yourHand.some((c) => cardKey(c) === cardKey(this.pendingCard as Card)))) this.pendingCard = null;

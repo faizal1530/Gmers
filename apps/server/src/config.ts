@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import type { GapleConfig } from "@gmers/game-engine";
+import type { GapleConfig, ludo } from "@gmers/game-engine";
 
 /** Semua angka dan jalur yang boleh diubah ada di sini (dan lewat variabel lingkungan GMERS_*), bukan di kode. */
 export interface ServerConfig {
@@ -48,6 +48,8 @@ export interface ServerConfig {
   hashSalt: string;
   /** Penimpa aturan Gaple (parameter mesin). `players` dan `openerSeat` diatur server. */
   game: Partial<GapleConfig>;
+  /** Penimpa aturan Ludo (parameter mesin). `players` dan `openerSeat` diatur server. */
+  ludo: Partial<ludo.LudoConfig>;
 }
 
 export const defaultServerConfig: ServerConfig = {
@@ -80,6 +82,7 @@ export const defaultServerConfig: ServerConfig = {
   adminToken: null,
   hashSalt: "gmers-dev-salt",
   game: {},
+  ludo: {},
 };
 
 function num(v: string | undefined, fallback: number): number {

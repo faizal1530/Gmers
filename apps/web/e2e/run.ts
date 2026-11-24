@@ -104,6 +104,41 @@ async function playUntilDone(pages: Page[], onProgress?: (moves: number) => Prom
   }
 }
 
+/** Mainkan Ludo lewat UI: klik Lempar dadu bila aktif, selain itu ketuk bidak yang menyala. */
+async function playLudo(pages: Page[], onProgress?: (actions: number) => Promise<void>): Promise<number> {
+  let actions = 0;
+  const deadline = Date.now() + 150_000;
+  for (;;) {
+    if (Date.now() > deadline) throw new Error("GAGAL: Ludo tidak selesai dalam 150 detik");
+    const states = await Promise.all(
+      pages.map((p) =>
+        p.evaluate(() => ({
+          done: !!document.querySelector('[data-testid="ranking"]'),
+          roll: !!document.querySelector<HTMLButtonElement>('[data-testid="roll"]') && !document.querySelector<HTMLButtonElement>('[data-testid="roll"]')?.disabled,
+          pawns: document.querySelectorAll(".pawn.ok").length,
+        })),
+      ),
+    );
+    if (states.every((x) => x.done)) return actions;
+    let acted = false;
+    for (let i = 0; i < pages.length && !acted; i++) {
+      const st = states[i];
+      const page = pages[i] as Page;
+      // State bisa berubah antara pengamatan dan klik (giliran pindah): klik singkat, gagal = coba lagi di putaran berikutnya.
+      if (st?.roll) {
+        acted = await page.locator('[data-testid="roll"]').click({ timeout: 400 }).then(() => true, () => false);
+      } else if (st && st.pawns > 0) {
+        acted = await page.locator(".pawn.ok").first().dispatchEvent("click", undefined, { timeout: 400 }).then(() => true, () => false);
+      }
+    }
+    if (acted) {
+      actions++;
+      if (onProgress) await onProgress(actions);
+    }
+    await sleep(acted ? 5 : 30);
+  }
+}
+
 async function main(): Promise<void> {
   const browser = await launch();
   if (!browser) {
@@ -260,6 +295,57 @@ async function main(): Promise<void> {
     check((await Promise.all(pages.map(handKeys))).every((h) => h.length === 7), "rematch: game 2 dimulai, tiap pemain 7 kartu");
     const total2 = await playUntilDone(pages);
     log(`game 2 selesai dalam ${total2} langkah`);
+
+    const extraPage = async (): Promise<Page> => {
+      const ctx = await browser.newContext({ viewport: { width: 360, height: 740 }, deviceScaleFactor: 2, locale: "id-ID" });
+      contexts.push(ctx);
+      const page = await ctx.newPage();
+      page.on("pageerror", (e) => problems.push(`pageerror[ludo]: ${e.message}`));
+      page.on("console", (m) => {
+        if (m.type() === "error" && !/status of 401/.test(m.text())) problems.push(`console.error[ludo]: ${m.text()}`);
+      });
+      page.on("request", (r) => {
+        const u = new URL(r.url());
+        if (!["127.0.0.1", "localhost"].includes(u.hostname) && u.protocol.startsWith("http")) external.push(r.url());
+      });
+      return page;
+    };
+    // 6b. Ludo: dua pemain memainkan satu game penuh lewat UI (lempar dadu, ketuk bidak)
+    const L1 = await extraPage();
+    const L2 = await extraPage();
+    await L1.goto(base);
+    await L1.fill("#nama", "Lia");
+    await L1.click('[data-testid="create-ludo"]');
+    await L1.waitForSelector('[data-testid="share-url"]');
+    check(((await L1.textContent('[data-testid="game-pick"]')) ?? "").includes("Ludo"), "room dibuat dengan game Ludo");
+    const lCode = (await L1.textContent('[data-testid="group-code"]'))?.trim() ?? "";
+    await L2.goto(`${base}/g/${lCode}`);
+    await L2.waitForSelector("#nama");
+    await L2.fill("#nama", "Lukas");
+    await L2.click("button[type=submit]");
+    await L2.waitForSelector('[data-testid="share-url"]');
+    check(((await L2.textContent('[data-testid="game-label"]')) ?? "").includes("Ludo"), "tamu melihat game terpilih: Ludo");
+    await L1.click("button.primary.big");
+    for (const p of [L1, L2]) await p.waitForSelector('[data-testid="ludo-board"]');
+    check((await L1.locator(".pawn").count()) === 8, "papan Ludo tampil dengan 8 bidak");
+    await noHorizontalOverflow(L1, "papan Ludo");
+    await shot(L1, "12-ludo-awal");
+    let shotMid = false;
+    const ludoMoves = await playLudo([L1, L2], async (n) => {
+      if (!shotMid && n >= 60) {
+        shotMid = true;
+        await shot(L1, "13-ludo-tengah");
+        await shot(L2, "13-ludo-tengah-p2");
+      }
+    });
+    log(`Ludo selesai dalam ${ludoMoves} aksi`);
+    for (const p of [L1, L2]) await p.waitForSelector('[data-testid="ranking"]');
+    check((await L1.locator('[data-testid="ranking"] li').count()) === 2, "hasil Ludo: peringkat 1..2");
+    check(((await L1.textContent('[data-testid="ranking"]')) ?? "").includes("dari 4 bidak"), "hasil Ludo menampilkan bidak yang sampai rumah");
+    await shot(L1, "14-ludo-hasil");
+    await L2.click('[data-testid="rematch"]');
+    for (const p of [L1, L2]) await p.waitForSelector('[data-testid="ludo-board"]');
+    check(true, "rematch Ludo memakai game yang sama");
 
     // 7. Akun: daftar, tetap masuk setelah muat ulang, masuk dari perangkat lain, room tetap di daftar
     const extra = async (): Promise<Page> => {

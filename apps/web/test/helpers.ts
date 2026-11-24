@@ -112,6 +112,8 @@ export function mkState(o: {
   hostSeat?: number;
   result?: NonNullable<StateMessage["game"]>["result"];
   groupId?: string;
+  gameId?: "gaple" | "ludo";
+  ludo?: import("@gmers/server/protocol").LudoView | null;
   deadline?: number | null;
   now?: number;
 }): StateMessage {
@@ -125,6 +127,7 @@ export function mkState(o: {
       id: o.groupId ?? "ABCDEF",
       groupId: o.groupId ?? "ABCDEF",
       phase,
+      gameId: o.gameId ?? "gaple",
       gameNo: phase === "lobby" ? 0 : 1,
       hostSeat: o.hostSeat ?? 0,
       maxSeats: 4,
@@ -135,6 +138,8 @@ export function mkState(o: {
       phase === "lobby"
         ? null
         : {
+            kind: o.gameId ?? "gaple",
+            ludo: o.ludo ?? null,
             board: o.board ?? [],
             ends: o.ends ?? null,
             turn: o.turn ?? 0,

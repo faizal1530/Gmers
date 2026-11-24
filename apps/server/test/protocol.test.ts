@@ -40,3 +40,15 @@ describe("pesan nudge", () => {
     expect(schema.safeParse({ type: "nudge", seat: 1 }).success).toBe(false);
   });
 });
+
+describe("pesan Ludo dan pilihan game", () => {
+  it("roll, pick, set_game, dan create_room dengan game diterima; nilai di luar rentang ditolak", () => {
+    expect(schema.parse({ type: "roll" })).toEqual({ type: "roll" });
+    expect(schema.parse({ type: "pick", pawn: 3 })).toEqual({ type: "pick", pawn: 3 });
+    expect(schema.parse({ type: "set_game", game: "ludo" })).toEqual({ type: "set_game", game: "ludo" });
+    expect(schema.parse({ type: "create_room", name: "Andi", token: tok(1), game: "ludo" })).toMatchObject({ game: "ludo" });
+    for (const bad of [{ type: "pick", pawn: 4 }, { type: "pick", pawn: -1 }, { type: "pick" }, { type: "roll", value: 6 }, { type: "set_game", game: "remi" }, { type: "create_room", name: "Andi", token: tok(1), game: "catur" }]) {
+      expect(schema.safeParse(bad).success).toBe(false);
+    }
+  });
+});

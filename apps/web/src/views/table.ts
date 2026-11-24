@@ -25,46 +25,50 @@ export interface TableActions {
   nudgeCooling: boolean;
 }
 
-export function tableView(s: StateMessage, a: TableActions): HTMLElement {
+/** Strip pemain: avatar, nama, sisa kartu/bidak, titik koneksi, cincin giliran. Dipakai semua game. */
+export function playersStrip(s: StateMessage, remaining: (n: number) => string): HTMLElement {
   const game = s.game;
-  if (!game) return h("div");
-  const mine = isMyTurn(s);
-  const moves = mine && a.connected ? game.yourMoves : [];
-  const playable = playableKeys(moves);
-  const turnSeat = s.room.seats[game.turn];
-  const turnName = turnSeat?.name ?? "";
-
-  const players = h(
+  return h(
     "ul",
     { class: "players", "aria-label": id.table.playersLabel },
     s.room.seats.map((seat, i) =>
       seat
         ? h(
             "li",
-            { class: `pl${game.turn === i ? " turn" : ""}${seat.connected ? "" : " off"}`, "data-seat": i },
+            { class: `pl${game?.turn === i ? " turn" : ""}${seat.connected ? "" : " off"}`, "data-seat": i },
             h("span", { class: "pl-av" }, avatar(seat.name, i, "md"), h("span", { class: `dot ${seat.connected ? "on" : "off"}`, role: "img", "aria-label": seat.connected ? id.lobby.ready : id.lobby.offline })),
             h("span", { class: "pl-name" }, seat.isYou ? id.lobby.you : seat.name),
-            h("span", { class: "pl-n" }, seat.cardsLeft === null ? "" : id.table.cardsLeft(seat.cardsLeft)),
+            h("span", { class: "pl-n" }, seat.cardsLeft === null ? "" : remaining(seat.cardsLeft)),
           )
         : null,
     ),
   );
+}
 
+/** Bilah giliran: siapa yang jalan, sisa waktu, dan tombol Colek untuk yang ditunggu. */
+export function turnBar(s: StateMessage, a: { onNudge: () => void; nudgeCooling: boolean; connected: boolean }): HTMLElement {
+  const game = s.game as NonNullable<StateMessage["game"]>;
+  const mine = isMyTurn(s);
+  const turnSeat = s.room.seats[game.turn];
+  const turnName = turnSeat?.name ?? "";
   const canNudge = !mine && !!turnSeat && turnSeat.connected;
-  const status = h(
+  return h(
     "div",
     { class: `turnbar${mine ? " mine" : ""}`, role: "status", "aria-live": "polite" },
-    h(
-      "div",
-      { class: "turn-row" },
-      h("span", { class: "turn-text", "data-testid": "turn-text" }, mine ? id.table.yourTurn : id.table.turnOf(turnName)),
-      h("span", { class: "timer", id: "timer", "data-testid": "timer" }),
-    ),
+    h("div", { class: "turn-row" }, h("span", { class: "turn-text", "data-testid": "turn-text" }, mine ? id.table.yourTurn : id.table.turnOf(turnName)), h("span", { class: "timer", id: "timer", "data-testid": "timer" })),
     h("div", { class: "timebar", "aria-hidden": "true" }, h("i", { id: "timefill" })),
-    canNudge
-      ? h("button", { class: "btn small nudge", id: "nudge", type: "button", "data-testid": "nudge", disabled: a.nudgeCooling || !a.connected, onclick: a.onNudge }, a.nudgeCooling ? id.table.nudgeWait : id.table.nudge(turnName))
-      : null,
+    canNudge ? h("button", { class: "btn small nudge", id: "nudge", type: "button", "data-testid": "nudge", disabled: a.nudgeCooling || !a.connected, onclick: a.onNudge }, a.nudgeCooling ? id.table.nudgeWait : id.table.nudge(turnName)) : null,
   );
+}
+
+export function tableView(s: StateMessage, a: TableActions): HTMLElement {
+  const game = s.game;
+  if (!game) return h("div");
+  const mine = isMyTurn(s);
+  const moves = mine && a.connected ? game.yourMoves : [];
+  const playable = playableKeys(moves);
+  const players = playersStrip(s, id.table.cardsLeft);
+  const status = turnBar(s, a);
 
   const ends = game.ends
     ? h(

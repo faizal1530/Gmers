@@ -17,7 +17,7 @@ export function resultView(s: StateMessage, busy: boolean, onAgain: () => void):
       h("span", { class: "crown", "aria-hidden": "true" }, "★"),
       avatar(nameOf(r.winner), r.winner, "lg"),
       h("h1", {}, iWon ? id.result.youWon : id.result.winner(nameOf(r.winner))),
-      h("p", { class: "hint" }, r.reason === "out" ? id.result.reasonOut : id.result.reasonBlocked),
+      h("p", { class: "hint" }, r.reason === "out" ? id.result.reasonOut : r.reason === "home" ? id.result.reasonHome : id.result.reasonBlocked),
     ),
     h(
       "ol",
@@ -29,7 +29,7 @@ export function resultView(s: StateMessage, busy: boolean, onAgain: () => void):
           h("span", { class: "rank-n" }, e.rank),
           avatar(nameOf(e.seat), e.seat, "sm"),
           h("span", { class: "grow" }, nameOf(e.seat), s.room.seats[e.seat]?.isYou ? ` (${id.lobby.you})` : ""),
-          h("span", { class: "muted" }, id.result.points(e.points)),
+          h("span", { class: "muted" }, s.game?.kind === "ludo" ? id.ludo.homeCount(4 - e.cardsLeft) : id.result.points(e.points)),
         ),
       ),
     ),

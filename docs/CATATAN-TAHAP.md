@@ -208,3 +208,22 @@ Server 95 (+26: layanan akun, API, sesi permanen termasuk 5 tahun dan restart, p
 5. **Hapus akun hanya menghapus akun di server.** Catatan anonim yang sudah ada (hash perangkat di `events.csv` dan `rooms.jsonl`) tidak dihapus; keduanya tidak memuat nama pengguna. Retensi 90 hari tetap usulan.
 6. **Satu akun = satu orang di metrik.** Perubahan ini memperbaiki penghitungan "perangkat sama = satu orang" untuk pengguna terdaftar, tetapi tamu tetap dihitung per perangkat.
 7. **Tidak ada pembatasan per IP** (aturan: IP tidak dibaca). Pembatas global dan penguncian per nama pengguna adalah penggantinya; serangan tebak-sandi terdistribusi pada satu nama pengguna bisa mengunci pemiliknya selama 10 menit.
+
+## Rencana penuh dengan 2 game, Fase 1: Ludo dan room game-agnostic (24 Nov 2026)
+
+Permintaan Faizal: implementasi seluruh rencana dengan 2 game. Pilihan Faizal: game kedua **Ludo**; cakupan **semua kecuali yang butuh keputusan hukum, uang, atau akun pihak ketiga**; teknologi tetap **web + Node + berkas di Volume** (tanpa Postgres/Redis dan tanpa layanan berbayar baru). Pengerjaan dalam fase; Fase 1 ini selesai.
+
+### Dibangun
+- **Mesin Ludo** (`packages/game-engine/src/ludo.ts`, `ludo.*`): jalur 52 petak, 4 bidak per pemain, keluar dengan 6, giliran tambahan untuk 6 dan memakan, petak aman 0, 13, 26, 39, 8, 21, 34, 47, finish tepat 56 (spek 7.4). Dadu dihasilkan mesin dari `seed + nomor lemparan` (klien tidak bisa menentukan angka), jadi seed + log cukup untuk replay. Parameter aturan di `LudoConfig`. Peringkat lengkap 1..n (pemenang, lalu kemajuan bidak). Uji: unit per aturan, uji properti (apply diterima iff ada di `legalMoves`, murni, replay), **simulasi 10.000 game per 2/3/4 pemain** (rata-rata 324/506/704 langkah) tanpa pelanggaran dan tanpa kebuntuan.
+- **Room game-agnostic** (`apps/server/src/games.ts`): `GameAdapter` (buat, restore dari log, giliran, langkah sah, terapkan, langkah otomatis, hasil, tampilan per pemain). `service.ts` tidak lagi memuat aturan Gaple. Pesan baru: `roll`, `pick {pawn}`, `set_game {game}`, dan `create_room` dengan `game`. Pemilik memilih game di lobi atau setelah game selesai; rematch memakai game yang sama. Log JSONL menyimpan `game` per game dan kompatibel dengan data lama (tanpa field `game` dibaca sebagai Gaple, diuji). Waktu giliran habis: Ludo melempar dadu lalu memilih bidak (memakan, finish, atau paling maju).
+- **Klien:** papan Ludo SVG (kandang, jalur, petak aman bertanda bintang, lorong rumah, pusat), dadu, bidak yang boleh jalan menyala dan bisa diketuk (juga lewat papan ketik dan daftar tombol berukuran 44 px), catatan langkah, suara baru (dadu, memakan), pemilih game di ruang tunggu, tombol Buat room Gaple/Ludo di tab Games, hasil per game.
+
+### Uji
+Mesin 78 (+24 Ludo), server 106 (+11 Ludo, +protokol), klien 121 (+16: geometri papan, tampilan, ketuk, papan ketik, terputus, selisih langkah, suara, pemilih game), E2E Chromium: dua pemain memainkan Ludo penuh lewat UI (316 aksi), tanpa overflow di 360 px, rematch. Uji geometri membuktikan jalur: 52 petak berurutan bersebelahan (diagonal hanya di empat sudut, seperti papan klasik) dan lorong rumah tiap kursi tersambung.
+
+### Keputusan otomatis (Fase 1)
+1. **Peringkat Ludo:** game berakhir saat satu pemain menghabiskan 4 bidak (spek: "menang bila keempat bidak finish"); peringkat lainnya diurutkan menurut jumlah kemajuan bidak, lalu bidak finish, lalu nomor kursi, supaya Trofi (Fase 2) punya urutan lengkap 1..n.
+2. **Tanpa aturan tiga enam beruntun dan tanpa blokade:** tidak ada di spesifikasi, jadi tidak ditambahkan (bisa dibuat parameter di `LudoConfig`).
+3. **Lemparan tanpa langkah sah melewati giliran otomatis** tanpa giliran tambahan, walau angkanya 6.
+4. **2 pemain berhadapan** (petak awal 0 dan 26), 3 pemain memakai kursi 0, 1, 2 (petak 0, 13, 26).
+5. **Bidak kandang dianggap setara:** hanya satu yang ditawarkan sebagai langkah sah.

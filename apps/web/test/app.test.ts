@@ -532,11 +532,13 @@ describe("tab navigasi", () => {
     expect(h.root.querySelector("nav")!.getAttribute("aria-label")).toBe(id.tabs.label);
   });
 
-  it("tab Games: Gaple aktif, Ludo dan Remi 'Segera', aturan singkat", () => {
+  it("tab Games: Gaple dan Ludo aktif, Remi 'Segera', aturan singkat kedua game", () => {
     const h = mount("/");
     expect(text(h.root)).toContain(id.games.gaple.name);
-    expect([...h.root.querySelectorAll(".game-card.soon")].map((c) => text(c))).toEqual([expect.stringContaining(id.games.soon), expect.stringContaining(id.games.soon)]);
-    expect(h.root.querySelectorAll(".rules li")).toHaveLength(id.games.rules.length);
+    expect(text(h.root)).toContain(id.games.ludo.name);
+    expect([...h.root.querySelectorAll(".game-card.soon")].map((c) => text(c))).toEqual([expect.stringContaining(id.games.soon)]);
+    expect(text(q(h.root, ".game-card.soon"))).toContain(id.games.remi.name);
+    expect(h.root.querySelectorAll(".rules li")).toHaveLength(id.games.rules.length + id.games.rulesLudo.length);
   });
 
   it("tab Room tanpa room: pesan kosong; tempel tautan atau kode membuka kelompok", () => {

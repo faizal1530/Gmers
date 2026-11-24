@@ -7,6 +7,8 @@ export interface NameFormOptions {
   submitLabel: string;
   busy: boolean;
   onSubmit: (name: string) => void;
+  /** Tombol kedua (mis. buat room Ludo) yang memakai nama yang sama. */
+  secondary?: { label: string; testId: string; onSubmit: (name: string) => void };
 }
 
 /** Formulir nama panggilan (beranda dan tautan). Tidak dibangun ulang saat state berubah, supaya fokus ketikan tidak hilang. */
@@ -50,6 +52,29 @@ export function nameForm(o: NameFormOptions): HTMLElement {
     input,
     hint,
     button,
+    o.secondary
+      ? h(
+          "button",
+          {
+            class: "btn big",
+            type: "button",
+            "data-testid": o.secondary.testId,
+            disabled: o.busy,
+            onclick: () => {
+              const r = checkName(input.value);
+              if (!r.ok) {
+                hint.textContent = id.name[r.reason];
+                hint.classList.add("bad");
+                input.setAttribute("aria-invalid", "true");
+                input.focus();
+                return;
+              }
+              o.secondary?.onSubmit(r.name);
+            },
+          },
+          o.secondary.label,
+        )
+      : null,
   );
   return form;
 }

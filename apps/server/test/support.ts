@@ -177,9 +177,9 @@ export function autoplay(client: Client, rng: () => number): void {
 /** Kunci yang boleh muncul di pesan state; selain ini berarti kebocoran. */
 export const STATE_KEYS = {
   top: ["type", "now", "room", "you", "game"],
-  room: ["id", "groupId", "phase", "gameNo", "hostSeat", "maxSeats", "seats"],
+  room: ["id", "groupId", "phase", "gameId", "gameNo", "hostSeat", "maxSeats", "seats"],
   seat: ["seat", "name", "connected", "cardsLeft", "isYou"],
-  game: ["board", "ends", "turn", "turnDeadline", "yourHand", "yourMoves", "moveCount", "result"],
+  game: ["kind", "ludo", "board", "ends", "turn", "turnDeadline", "yourHand", "yourMoves", "moveCount", "result"],
   result: ["reason", "winner", "ranking"],
   rank: ["seat", "rank", "points", "cardsLeft"],
 };

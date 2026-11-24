@@ -1,7 +1,7 @@
 /** Efek suara sintetis lewat Web Audio: tanpa berkas audio, tanpa pihak ketiga. */
 import type { KV } from "./storage";
 
-export type SoundName = "place" | "pass" | "turn" | "nudge" | "start" | "win" | "lose" | "chat" | "error";
+export type SoundName = "dice" | "capture" | "place" | "pass" | "turn" | "nudge" | "start" | "win" | "lose" | "chat" | "error";
 
 export interface SoundLike {
   readonly enabled: boolean;
@@ -83,6 +83,14 @@ export class SoundPlayer implements SoundLike {
       if (c.state === "suspended") void c.resume();
       const t = c.currentTime;
       switch (name) {
+        case "dice": // dadu berderak
+          for (let i = 0; i < 5; i++) this.noise(c, t + i * 0.05, 0.04, 0.7, 1200 + i * 350);
+          this.tone(c, t + 0.26, 0.08, 300, 220, "triangle", 0.6);
+          break;
+        case "capture": // bidak dimakan: dentum turun
+          this.tone(c, t, 0.18, 320, 90, "sawtooth", 0.5);
+          this.noise(c, t, 0.08, 0.8, 700);
+          break;
         case "place": // klak kartu: ketukan berderak + dentum rendah
           this.noise(c, t, 0.05, 0.9, 1800);
           this.tone(c, t, 0.1, 170, 70, "sine", 0.9);

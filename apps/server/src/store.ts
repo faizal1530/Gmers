@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { GapleConfig, Move } from "@gmers/game-engine";
+import type { GameId } from "./protocol";
 
 /** Log hanya-tambah. Isi chat tidak pernah ditulis. */
 export type LogRecord =
@@ -8,8 +8,10 @@ export type LogRecord =
   | { t: "room"; roomId: string; groupId: string; ts: number }
   | { t: "sit"; roomId: string; ts: number; seat: number; tokenHash: string; name: string }
   | { t: "stand"; roomId: string; ts: number; seat: number }
-  | { t: "start"; roomId: string; ts: number; gameNo: number; seed: string; config: GapleConfig; roomSeats: number[] }
-  | { t: "move"; roomId: string; ts: number; gameNo: number; move: Move; auto?: true }
+  | { t: "setgame"; roomId: string; ts: number; game: GameId }
+  /** `game` kosong = Gaple (catatan lama sebelum ada Ludo). */
+  | { t: "start"; roomId: string; ts: number; gameNo: number; seed: string; config: unknown; roomSeats: number[]; game?: GameId }
+  | { t: "move"; roomId: string; ts: number; gameNo: number; move: unknown; auto?: true }
   | { t: "closed"; roomId: string; ts: number };
 
 export interface RoomLog {

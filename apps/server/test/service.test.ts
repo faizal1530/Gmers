@@ -405,7 +405,7 @@ describe("rematch", () => {
     expect(r.game!.roomSeats).toEqual([0, 1, 2]);
     expect(r.game!.state.requiredOpening).toBeNull();
     expect(r.game!.roomSeats[r.game!.state.turn]).toBe(winner);
-    expect(r.game!.state.hands.map((x) => x.length)).toEqual([7, 7, 7]);
+    expect(r.game!.state.hands.map((x: number[]) => x.length)).toEqual([7, 7, 7]);
     const names = h.events.events.map((e) => e.event);
     expect(names).toContain("rematch_clicked");
     expect(names.filter((e) => e === "game_started")).toHaveLength(2);
@@ -446,7 +446,7 @@ describe("chat dan peristiwa", () => {
     const { conns, roomId } = table(h, 2);
     for (let i = 0; i < 200 && room(h, roomId).phase === "playing"; i++) h.clock.advance(1000);
     const fin = h.events.events.find((e) => e.event === "game_finished")!;
-    expect(fin.detail).toMatch(/^reason=(out|blocked);players=2;ranking=\d>\d;devices=[0-9a-f]{16}\|[0-9a-f]{16}$/);
+    expect(fin.detail).toMatch(/^reason=(out|blocked);players=2;ranking=\d>\d;devices=[0-9a-f]{16}\|[0-9a-f]{16};game=gaple$/);
     expect(fin.gameNo).toBe(1);
     send(h, conns[1]!, { type: "leave" });
     expect(h.events.events.at(-1)).toMatchObject({ event: "player_left" });

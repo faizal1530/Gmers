@@ -1,20 +1,10 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import {
-  apply,
-  canonical,
-  createConfig,
-  ends,
-  init,
-  isEngineError,
-  legalMoves,
-  type GapleConfig,
-  type GapleState,
-  type Move,
-} from "@gmers/game-engine";
+import { isEngineError, type EngineError } from "@gmers/game-engine";
+import { adapterOf, GAME_IDS, type GameAdapter } from "./games";
 import { realClock, type Clock } from "./clock";
 import type { ServerConfig } from "./config";
 import { NoopEventSink, type EventName, type EventSink } from "./events";
-import type { ClientMessage, GameView, MoveView, ProtocolError, ServerMessage, StateMessage } from "./protocol";
+import type { ClientMessage, GameId, GameView, ProtocolError, ServerMessage, StateMessage } from "./protocol";
 import type { LogRecord, RoomLog } from "./store";
 import { MemoryRoomLog } from "./store";
 
@@ -37,7 +27,10 @@ interface Member {
 }
 
 interface ActiveGame {
-  state: GapleState;
+  adapter: GameAdapter;
+  /** Status mesin. Bentuknya milik tiap adapter game; room hanya meneruskannya, jadi sengaja `any` di batas ini. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  state: any;
   /** roomSeats[kursiMesin] = kursi room. */
   roomSeats: number[];
   /** Hash perangkat (16 hex) tiap pemain game ini, urut kursi room. Hanya untuk metrik. */
@@ -61,6 +54,8 @@ export interface Room {
   hostSeat: number;
   seats: (Member | null)[];
   phase: "lobby" | "playing" | "finished";
+  /** Game yang dipilih untuk sesi ini (bisa diganti pemilik di lobi atau setelah game selesai). */
+  gameId: GameId;
   gameNo: number;
   game: ActiveGame | null;
   lastWinnerSeat: number | null;
@@ -201,22 +196,29 @@ export class RoomService {
           room.lastActivity = rec.ts;
           break;
         }
+        case "setgame": {
+          const room = this.rooms.get(rec.roomId);
+          if (room) room.gameId = rec.game;
+          break;
+        }
         case "start": {
           const room = this.rooms.get(rec.roomId);
           if (!room) break;
           room.gameNo = rec.gameNo;
           room.phase = "playing";
-          room.game = { state: init(rec.config, rec.seed), roomSeats: rec.roomSeats, devices: this.deviceIds(room, rec.roomSeats), deadline: null, cancelTimer: null };
+          const adapter = adapterOf(rec.game);
+          room.gameId = adapter.id;
+          room.game = { adapter, state: adapter.restore(rec.config, rec.seed), roomSeats: rec.roomSeats, devices: this.deviceIds(room, rec.roomSeats), deadline: null, cancelTimer: null };
           room.lastActivity = rec.ts;
           break;
         }
         case "move": {
           const room = this.rooms.get(rec.roomId);
           if (!room?.game || room.gameNo !== rec.gameNo) break;
-          const next = apply(room.game.state, rec.move);
-          if (isEngineError(next)) throw new Error(`Log rusak untuk room ${rec.roomId}: ${next.code}`);
+          const next = room.game.adapter.apply(room.game.state, rec.move);
+          if (isEngineError(next)) throw new Error(`Log rusak untuk room ${rec.roomId}: ${(next as EngineError).code}`);
           room.game.state = next;
-          if (next.result) this.markFinished(room, next);
+          if (room.game.adapter.outcome(next)) this.markFinished(room, next);
           room.lastActivity = rec.ts;
           break;
         }
@@ -241,6 +243,7 @@ export class RoomService {
       hostSeat: 0,
       seats: Array.from({ length: this.cfg.maxSeats }, () => null),
       phase: "lobby",
+      gameId: "gaple",
       gameNo: 0,
       game: null,
       lastWinnerSeat: null,
@@ -260,13 +263,13 @@ export class RoomService {
     }
   }
 
-  private markFinished(room: Room, state: GapleState): void {
+  private markFinished(room: Room, state: unknown): void {
     room.phase = "finished";
     const game = room.game as ActiveGame;
     game.cancelTimer?.();
     game.cancelTimer = null;
     game.deadline = null;
-    const winnerEngineSeat = (state.result as NonNullable<GapleState["result"]>).winner;
+    const winnerEngineSeat = game.adapter.outcome(state)?.winner ?? 0;
     room.lastWinnerSeat = game.roomSeats[winnerEngineSeat] ?? null;
   }
 
@@ -302,29 +305,21 @@ export class RoomService {
     let gameView: GameView | null = null;
     if (game) {
       const st = game.state;
+      const ad = game.adapter;
       const mine = engineSeatOf(member.seat);
-      const moves: MoveView[] =
-        mine >= 0
-          ? legalMoves(st, mine).map((m) => (m.type === "pass" ? { type: "pass" } : { type: "play", card: m.card, end: m.end }))
-          : [];
+      const out = ad.outcome(st);
       gameView = {
-        board: st.board,
-        ends: ends(st),
-        turn: game.roomSeats[st.turn] as number,
+        kind: ad.id,
+        ...ad.view(st, mine, game.roomSeats),
+        turn: game.roomSeats[ad.turn(st)] as number,
         turnDeadline: game.deadline,
-        yourHand: mine >= 0 ? (st.hands[mine] ?? []) : [],
-        yourMoves: moves,
-        moveCount: st.log.length,
-        result: st.result
+        yourMoves: ad.moveViews(st, mine),
+        moveCount: ad.moveCount(st),
+        result: out
           ? {
-              reason: st.result.reason,
-              winner: game.roomSeats[st.result.winner] as number,
-              ranking: st.result.ranking.map((r) => ({
-                seat: game.roomSeats[r.seat] as number,
-                rank: r.rank,
-                points: r.points,
-                cardsLeft: r.cardsLeft,
-              })),
+              reason: out.reason,
+              winner: game.roomSeats[out.winner] as number,
+              ranking: out.ranking.map((r) => ({ seat: game.roomSeats[r.seat] as number, rank: r.rank, points: r.points, cardsLeft: r.cardsLeft })),
             }
           : null,
       };
@@ -336,6 +331,7 @@ export class RoomService {
         id: room.id,
         groupId: room.groupId,
         phase: room.phase,
+        gameId: room.gameId,
         gameNo: room.gameNo,
         hostSeat: room.hostSeat,
         maxSeats: this.cfg.maxSeats,
@@ -346,7 +342,7 @@ export class RoomService {
             seat,
             name: m.name,
             connected: m.conn !== null,
-            cardsLeft: game && es >= 0 ? (game.state.hands[es]?.length ?? 0) : null,
+            cardsLeft: game && es >= 0 ? game.adapter.remaining(game.state, es) : null,
             isYou: m === member,
           };
         }),
@@ -366,11 +362,11 @@ export class RoomService {
     const game = room.game;
     if (!game || room.phase !== "playing") return;
     game.cancelTimer?.();
-    const stamp = game.state.log.length;
+    const stamp = game.adapter.moveCount(game.state);
     const gameNo = room.gameNo;
     game.deadline = this.clock.now() + this.cfg.turnTimeoutMs;
     game.cancelTimer = this.clock.setTimeout(() => {
-      if (this.stopped || room.phase !== "playing" || room.gameNo !== gameNo || room.game?.state.log.length !== stamp) return;
+      if (this.stopped || room.phase !== "playing" || room.gameNo !== gameNo || (room.game ? room.game.adapter.moveCount(room.game.state) : -1) !== stamp) return;
       this.autoMove(room);
     }, this.cfg.turnTimeoutMs);
   }
@@ -378,29 +374,29 @@ export class RoomService {
   /** Waktu habis: lewat bila tidak ada langkah lain; selain itu kartu sah pertama. */
   private autoMove(room: Room): void {
     const game = room.game as ActiveGame;
-    const options = legalMoves(game.state, game.state.turn);
-    const move = options[0];
+    const move = game.adapter.auto(game.state, game.adapter.turn(game.state));
     if (!move) return;
     this.commitMove(room, move, true);
     this.broadcast(room);
   }
 
   /** Terapkan langkah yang sudah divalidasi mesin: log, timer, penutupan game. */
-  private commitMove(room: Room, move: Move, auto: boolean): ProtocolError | null {
+  private commitMove(room: Room, move: unknown, auto: boolean): ProtocolError | null {
     const game = room.game as ActiveGame;
-    const next = apply(game.state, move);
-    if (isEngineError(next)) return err(next.code, next.message);
+    const next = game.adapter.apply(game.state, move);
+    if (isEngineError(next)) return err((next as EngineError).code, (next as EngineError).message);
     const rec: LogRecord = { t: "move", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, move };
     this.append(auto ? { ...rec, auto: true } : rec);
     game.state = next;
-    if (next.result) {
+    const out = game.adapter.outcome(next);
+    if (out) {
       this.markFinished(room, next);
-      const ranking = next.result.ranking.map((r) => game.roomSeats[r.seat]).join(">");
+      const ranking = out.ranking.map((r) => game.roomSeats[r.seat]).join(">");
       this.emit(
         room,
         "game_finished",
         null,
-        `reason=${next.result.reason};players=${game.roomSeats.length};ranking=${ranking};devices=${game.devices.join("|")}`,
+        `reason=${out.reason};players=${game.roomSeats.length};ranking=${ranking};devices=${game.devices.join("|")};game=${game.adapter.id}`,
       );
     } else {
       this.armTimer(room);
@@ -425,7 +421,7 @@ export class RoomService {
         conn.send({ type: "pong", now: this.clock.now() });
         return;
       case "create_room":
-        return this.createGroup(conn, msg.name, msg.token);
+        return this.createGroup(conn, msg.name, msg.token, msg.game);
       case "open_link":
         return this.openLink(conn, msg.groupId, msg.token);
       case "join":
@@ -449,10 +445,13 @@ export class RoomService {
         return this.chat(conn, room, member, msg.text);
       case "nudge":
         return this.nudge(conn, room, member);
+      case "set_game":
+        return this.setGame(conn, room, member, msg.game);
       case "play":
-        return this.playerMove(conn, room, member, { type: "play", seat: -1, card: canonical(msg.card), end: msg.end });
       case "pass":
-        return this.playerMove(conn, room, member, { type: "pass", seat: -1 });
+      case "roll":
+      case "pick":
+        return this.playerMove(conn, room, member, msg);
     }
   }
 
@@ -486,7 +485,7 @@ export class RoomService {
     conn.session = { roomId: room.id, tokenHash: member.tokenHash };
   }
 
-  private createGroup(conn: Conn, name: string, token: string): void {
+  private createGroup(conn: Conn, name: string, token: string, game?: GameId): void {
     if (this.rooms.size >= this.cfg.maxRooms) {
       conn.send(err("SERVER_BUSY", "Server sedang penuh. Coba lagi nanti."));
       return;
@@ -498,6 +497,10 @@ export class RoomService {
     this.groups.set(id, { id, createdAt: now, liveRoomId: null });
     this.append({ t: "group", groupId: id, ts: now });
     const room = this.newSession(this.groups.get(id) as Group, true);
+    if (game && GAME_IDS.includes(game) && game !== room.gameId) {
+      room.gameId = game;
+      this.append({ t: "setgame", roomId: room.id, ts: now, game });
+    }
     const tokenHash = hashToken(token, this.cfg.hashSalt);
     this.emit(room, "group_created", tokenHash);
     this.sit(room, tokenHash, name, 0, conn);
@@ -610,19 +613,17 @@ export class RoomService {
       conn.send(err("NEED_MORE_PLAYERS", `Butuh minimal ${this.cfg.minPlayersToStart} pemain untuk mulai.`));
       return;
     }
-    // Rematch: pemenang game sebelumnya membuka dengan kartu bebas (parameter openerSeat mesin).
+    // Rematch: pemenang game sebelumnya jalan lebih dulu (parameter openerSeat mesin).
     const winnerEngine = rematch && room.lastWinnerSeat !== null ? roomSeats.indexOf(room.lastWinnerSeat) : -1;
-    const config: GapleConfig = createConfig({
-      ...this.cfg.game,
-      players: roomSeats.length as 2 | 3 | 4,
-      openerSeat: winnerEngine >= 0 ? winnerEngine : null,
-    });
+    const adapter = adapterOf(room.gameId);
     const seed = this.newSeed();
+    const created = adapter.create(roomSeats.length, seed, winnerEngine >= 0 ? winnerEngine : null, this.cfg);
     room.gameNo += 1;
     room.phase = "playing";
-    room.game = { state: init(config, seed), roomSeats, devices: this.deviceIds(room, roomSeats), deadline: null, cancelTimer: null };
-    this.append({ t: "start", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, seed, config, roomSeats });
-    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0};devices=${room.game?.devices.join("|") ?? ""}`);
+    room.game = { adapter, state: created.state, roomSeats, devices: this.deviceIds(room, roomSeats), deadline: null, cancelTimer: null };
+    const config = created.config;
+    this.append({ t: "start", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, seed, config, roomSeats, game: adapter.id });
+    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0};devices=${room.game?.devices.join("|") ?? ""};game=${adapter.id}`);
     this.armTimer(room);
     this.broadcast(room);
   }
@@ -658,7 +659,7 @@ export class RoomService {
       conn.send(err("NOT_PLAYING", "Game belum berjalan."));
       return;
     }
-    if (game.state.turn === mine) {
+    if (game.adapter.turn(game.state) === mine) {
       conn.send(err("SELF_TURN", "Sekarang giliranmu, bukan giliran temanmu."));
       return;
     }
@@ -667,7 +668,7 @@ export class RoomService {
       conn.send(err("RATE_LIMITED", "Tunggu sebentar sebelum menyundul lagi."));
       return;
     }
-    const targetSeat = game.roomSeats[game.state.turn] as number;
+    const targetSeat = game.roomSeats[game.adapter.turn(game.state)] as number;
     const target = room.seats[targetSeat];
     if (!target?.conn) {
       conn.send(err("NOT_CONNECTED", `${target?.name ?? "Pemain itu"} sedang terputus.`));
@@ -691,7 +692,34 @@ export class RoomService {
     for (const m of room.seats) m?.conn?.send(msg);
   }
 
-  private playerMove(conn: Conn, room: Room, member: Member, move: Move): void {
+  /** Pemilik memilih game untuk room (di lobi atau setelah game selesai). */
+  private setGame(conn: Conn, room: Room, member: Member, game: GameId): void {
+    if (member.seat !== room.hostSeat) {
+      conn.send(err("NOT_HOST", "Hanya pembuat room yang bisa memilih game."));
+      return;
+    }
+    if (room.phase === "playing") {
+      conn.send(err("WRONG_PHASE", "Game sedang berjalan."));
+      return;
+    }
+    if (!GAME_IDS.includes(game)) {
+      conn.send(err("BAD_GAME", "Game tidak dikenal."));
+      return;
+    }
+    if (room.gameId !== game) {
+      room.gameId = game;
+      this.append({ t: "setgame", roomId: room.id, ts: this.clock.now(), game });
+      // Setelah game selesai, pindah game kembali ke ruang tunggu.
+      if (room.phase === "finished") {
+        room.phase = "lobby";
+        room.game?.cancelTimer?.();
+        room.game = null;
+      }
+    }
+    this.broadcast(room);
+  }
+
+  private playerMove(conn: Conn, room: Room, member: Member, msg: ClientMessage): void {
     const game = room.game;
     if (!game || room.phase !== "playing") {
       conn.send(err("NOT_PLAYING", "Game belum berjalan."));
@@ -702,7 +730,12 @@ export class RoomService {
       conn.send(err("NOT_PLAYING", "Kamu tidak ikut di game ini."));
       return;
     }
-    const error = this.commitMove(room, { ...move, seat: engineSeat } as Move, false);
+    const base = game.adapter.fromClient(msg);
+    if (!base) {
+      conn.send(err("WRONG_GAME", "Langkah itu bukan untuk game ini."));
+      return;
+    }
+    const error = this.commitMove(room, { ...base, seat: engineSeat }, false);
     if (error) {
       conn.send(error);
       return;
