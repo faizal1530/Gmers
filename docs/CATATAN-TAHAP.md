@@ -227,3 +227,27 @@ Mesin 78 (+24 Ludo), server 106 (+11 Ludo, +protokol), klien 121 (+16: geometri 
 3. **Lemparan tanpa langkah sah melewati giliran otomatis** tanpa giliran tambahan, walau angkanya 6.
 4. **2 pemain berhadapan** (petak awal 0 dan 26), 3 pemain memakai kursi 0, 1, 2 (petak 0, 13, 26).
 5. **Bidak kandang dianggap setara:** hanya satu yang ditawarkan sebagai langkah sah.
+
+## Rencana penuh dengan 2 game, Fase 2: Trofi, Bintang, kelas, ledger, Ranked (24 Nov 2026)
+
+### Dibangun
+- **Ledger** (`apps/server/src/ledger.ts`): satu-satunya jalan mengubah saldo (Trofi, Bintang, Koin). Hanya-tambah (`ledger.jsonl`, izin 600), satu `post` = satu catatan (atomik), saldo turunan dari baris, tidak boleh negatif, **idempoten** per (akun, mata uang, alasan, ref). Aturan proyek nomor 1.
+- **Ekonomi** (`economy.ts`, konfigurasi server): Trofi Ranked 4 pemain +10/+4/-2/-5, 2 pemain +10/-5 (spek 7.5); 3 pemain diturunkan +10/+2/-5; kelas Pemula 0, Jago 100, Pro 300, Master 600, Raja 1000 (spek 4); **lantai kelas** (tidak turun di bawah batas kelas yang pernah dicapai); bonus game Ranked pertama hari itu +2 (hari WIB); Bintang +5 per game selesai dengan batas harian 50.
+- **`Progress`** (`progress.ts`): menghitung hadiah di server dari hasil game. Pemain tamu tidak mendapat Trofi/Bintang, dan Ranked dengan satu tamu tidak mengubah Trofi siapa pun. Pemain yang gilirannya dimainkan otomatis 3 kali berturut-turut ditandai **meninggalkan game** dan dihitung peringkat terakhir ("disconnect dihitung kalah tanpa hukuman tambahan"). Batas pasangan harian (6 game Ranked antar kelompok akun yang sama yang mengubah Trofi) sebagai anti win-trading sederhana. Seluruh keadaan turunan dipulihkan dari ledger setelah restart.
+- **Room Ranked:** pemilik menyalakan lewat `set_ranked` (hanya bila semua yang duduk punya akun; tamu yang duduk mematikannya); log JSONL menyimpan flag dan hitungan giliran otomatis.
+- **Autentikasi WebSocket:** pesan `auth {session}` mengenali akun pada koneksi; klien mengirimnya paling awal setiap (re)koneksi.
+- **Antrean Ranked lawan acak** (`matchmaking.ts`): 4 pemain menunggu = langsung mulai; 2 atau 3 pemain mulai setelah menunggu 15 dtk (`queueWaitMs`). Per game. Tanpa lawan komputer: bila hanya satu orang mengantre, tidak ada pertandingan. Batal, putus koneksi, dan status antrean setelah masuk ulang ditangani.
+- **API:** `/api/me`, `/api/login`, `/api/register` menyertakan dompet (Trofi, Bintang, Koin, kelas, target kelas berikutnya); `GET /api/leaderboard` (butuh sesi, hanya nama tampilan, tidak membocorkan nama pengguna).
+- **Klien:** kartu "Ranked lawan acak" di tab Games (cari lawan per game, status antrean, batal; tamu diarahkan ke Profil), papan peringkat, dompet di Profil (lencana kelas, Trofi, Bintang, bilah kemajuan), pemilih Santai/Ranked di ruang tunggu, layar hasil dengan "Hasilmu" (Trofi, Bintang, ajakan naik kelas) dan chip Trofi per pemain. Dompet diperbarui langsung saat game selesai.
+
+### Uji
+Server 136 (+30: ledger atomik/idempoten/pulih, kelas dan hari WIB, semua aturan Trofi termasuk lantai, bonus, batas pasangan, abandon, pemulihan dari log; integrasi room Ranked, antrean, auth, API dompet dan papan), klien 134 (+13), E2E Chromium: dua akun mengantre, dicocokkan otomatis, bermain Ludo Ranked penuh lewat UI, hadiah +12 dan +0 Trofi (10 + bonus 2; lantai 0), papan peringkat tampil. E2E menemukan cacat tata letak (nama panjang terpecah per huruf di baris peringkat); diperbaiki.
+
+### Keputusan otomatis (Fase 2)
+1. **Satu Trofi untuk semua game** (spek menyebut satu angka Trofi dan satu kelas); bukan per game.
+2. **3 pemain:** tabel +10/+2/-5 (jumlah sama dengan tabel 4 pemain) karena spek hanya memberi 4 dan 2 pemain. Ubah di `economy.ts`.
+3. **Bonus +2 diberikan di game Ranked pertama hari itu untuk semua peserta** (menang atau kalah), lalu dikenai lantai kelas; sehingga peserta kalah di 0 Trofi tetap 0.
+4. **Ranked wajib akun** (tamu tidak punya Trofi). Spek tidak melarang Ranked dengan teman; room Ranked buatan sendiri diizinkan asal semua pemain punya akun.
+5. **Bintang tidak punya pemakaian** di MVP selain ditampilkan (spek tidak menyebut apa yang bisa dibeli dengan Bintang).
+6. **Papan peringkat memuat akun mana pun yang pernah punya baris Trofi**, termasuk 0, urut Trofi; hanya nama tampilan.
+7. **Tidak ada penalti Trofi untuk keluar mid-game** karena keluar saat bermain tidak diizinkan; meninggalkan game dideteksi lewat giliran otomatis berturut-turut.

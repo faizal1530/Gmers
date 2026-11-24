@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 import type { GapleConfig, ludo } from "@gmers/game-engine";
 
 /** Semua angka dan jalur yang boleh diubah ada di sini (dan lewat variabel lingkungan GMERS_*), bukan di kode. */
@@ -29,6 +30,8 @@ export interface ServerConfig {
   roomLogFile: string;
   /** Berkas akun (JSONL hanya-tambah) di dataDir. */
   accountsFile: string;
+  /** Buku besar (Trofi, Bintang, Koin) di dataDir. */
+  ledgerFile: string;
   /** Biaya scrypt (N). Uji memakai nilai kecil. */
   passwordCost: number;
   /** Masa berlaku sesi masuk. null = tidak pernah kedaluwarsa (seperti WhatsApp): sesi hanya berakhir bila pengguna keluar, kata sandi diganti, atau admin mereset. */
@@ -48,6 +51,8 @@ export interface ServerConfig {
   hashSalt: string;
   /** Penimpa aturan Gaple (parameter mesin). `players` dan `openerSeat` diatur server. */
   game: Partial<GapleConfig>;
+  /** Angka ekonomi: Trofi, kelas, Bintang, antrean Ranked. */
+  economy: EconomyConfig;
   /** Penimpa aturan Ludo (parameter mesin). `players` dan `openerSeat` diatur server. */
   ludo: Partial<ludo.LudoConfig>;
 }
@@ -72,6 +77,7 @@ export const defaultServerConfig: ServerConfig = {
   dataDir: "data",
   roomLogFile: "rooms.jsonl",
   accountsFile: "accounts.jsonl",
+  ledgerFile: "ledger.jsonl",
   passwordCost: 16384,
   sessionTtlMs: null,
   loginMaxFails: 5,
@@ -83,6 +89,7 @@ export const defaultServerConfig: ServerConfig = {
   hashSalt: "gmers-dev-salt",
   game: {},
   ludo: {},
+  economy: DEFAULT_ECONOMY,
 };
 
 function num(v: string | undefined, fallback: number): number {

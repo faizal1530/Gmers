@@ -7,6 +7,7 @@ import { avatar } from "./avatar";
 
 export interface ProfileOptions {
   account: AccountViewOptions;
+  wallet: HTMLElement;
   name: string;
   theme: ThemeMode;
   soundOn: boolean;
@@ -27,6 +28,7 @@ export function profileView(o: ProfileOptions): HTMLElement {
     { class: "stack" },
     h("h1", {}, p.title),
     accountView(o.account),
+    o.wallet,
     h(
       "div",
       { class: "panel" },

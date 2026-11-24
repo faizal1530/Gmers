@@ -29,6 +29,10 @@ export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMinLength" 
     z.object({ type: z.literal("roll") }).strict(),
     z.object({ type: z.literal("pick"), pawn: z.number().int().min(0).max(3) }).strict(),
     z.object({ type: z.literal("set_game"), game: z.enum(["gaple", "ludo"]) }).strict(),
+    z.object({ type: z.literal("set_ranked"), on: z.boolean() }).strict(),
+    z.object({ type: z.literal("auth"), session: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
+    z.object({ type: z.literal("queue_ranked"), game: z.enum(["gaple", "ludo"]) }).strict(),
+    z.object({ type: z.literal("cancel_queue") }).strict(),
     z.object({ type: z.literal("chat"), text: z.string().trim().min(1).max(cfg.chatMaxLength).regex(noControl) }).strict(),
     z.object({ type: z.literal("rematch") }).strict(),
     z.object({ type: z.literal("leave") }).strict(),
@@ -52,6 +56,8 @@ export interface SeatView {
   /** Jumlah kartu di tangan (null di lobi). Isi kartu pemain lain tidak pernah dikirim. */
   cardsLeft: number | null;
   isYou: boolean;
+  /** Punya akun (syarat Ranked). */
+  registered: boolean;
 }
 
 export type MoveView = { type: "play"; card: Card; end: EndSide } | { type: "pass" } | { type: "roll" } | { type: "pick"; pawn: number };
@@ -88,6 +94,8 @@ export interface GameView {
   yourMoves: MoveView[];
   moveCount: number;
   result: null | {
+    /** Hadiah game ini per pemain terdaftar (Trofi hanya di Ranked). Dihitung server. */
+    rewards?: { seat: number; trofi: number; bintang: number; trofiTotal: number; kelas: string; kelasUp: string | null }[];
     /** out/blocked (Gaple), home (Ludo). */
     reason: string;
     winner: number;
@@ -106,6 +114,8 @@ export interface StateMessage {
     phase: "lobby" | "playing" | "finished";
     /** Game yang dipilih untuk room ini. */
     gameId: GameId;
+    /** Room Ranked: Trofi berubah di akhir game. Hanya untuk pemain yang semuanya punya akun. */
+    ranked: boolean;
     gameNo: number;
     hostSeat: number;
     maxSeats: number;
@@ -120,6 +130,9 @@ export type ServerMessage =
   | ProtocolError
   | { type: "pong"; now: number }
   | { type: "left" }
+  | { type: "auth_ok"; username: string; name: string }
+  | { type: "queue"; state: "waiting" | "idle"; game: GameId | null; since: number | null }
+  | { type: "match_found"; groupId: string }
   /** Dikirim ke pemain yang sedang ditunggu ("sundul"). */
   | { type: "nudge"; fromSeat: number; fromName: string }
   /** Konfirmasi ke pengirim sundulan. */

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AccountService, FileAccountLog, isAuthError, type AccountLog } from "./accounts";
 import { realClock } from "./clock";
+import { Ledger, FileLedgerLog, type LedgerLog } from "./ledger";
+import { Progress } from "./progress";
 import type { ServerConfig } from "./config";
 import { CsvEventSink, NoopEventSink, type EventSink } from "./events";
 import { makeClientMessageSchema, type ServerMessage } from "./protocol";
@@ -16,11 +18,14 @@ export interface GmersServer {
   port: number;
   service: RoomService;
   accounts: AccountService;
+  ledger: Ledger;
+  progress: Progress;
   close(): Promise<void>;
 }
 
 export interface ServerDeps extends ServiceDeps {
   accountLog?: AccountLog;
+  ledgerLog?: LedgerLog;
   log?: RoomLog;
   events?: EventSink;
 }
@@ -31,7 +36,20 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   // eslint-disable-next-line prefer-const -- service dibuat setelah accounts, keduanya saling merujuk lewat closure
   let service: RoomService;
   const accounts = new AccountService(config, deps.accountLog ?? new FileAccountLog(join(config.dataDir, config.accountsFile)), deps.clock ?? realClock, (h) => service.groupsOf(h));
-  service = new RoomService(config, { ...deps, log, events, onSeat: (h, g) => accounts.noteGroup(h, g) });
+  const clock = deps.clock ?? realClock;
+  const ledger = new Ledger(deps.ledgerLog ?? new FileLedgerLog(join(config.dataDir, config.ledgerFile)), () => clock.now());
+  const progress = new Progress(ledger, config.economy);
+  service = new RoomService(config, {
+    ...deps,
+    log,
+    events,
+    onSeat: (h, g) => accounts.noteGroup(h, g),
+    hooks: {
+      authenticate: (session) => accounts.identify(session),
+      accountIdOf: (h) => accounts.accountIdByTokenHash(h),
+      settle: (input) => progress.settle(input),
+    },
+  });
   service.start();
 
   const schema = makeClientMessageSchema(config);
@@ -39,7 +57,7 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   const http: HttpServer = createHttpServer((req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
     if (path.startsWith("/api/") || path === "/admin/accounts/reset") {
-      handleApi(config, accounts, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
+      handleApi({ config, accounts, progress }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
       return;
     }
     try {
@@ -57,6 +75,7 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
     const conn: Conn = {
       id: randomUUID(),
       session: null,
+      account: null,
       send(msg: ServerMessage) {
         if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
       },
@@ -114,6 +133,8 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
     port,
     service,
     accounts,
+    ledger,
+    progress,
     async close() {
       clearInterval(heartbeat);
       service.stop();
@@ -275,7 +296,14 @@ function bearer(req: IncomingMessage): string | null {
   return h?.startsWith("Bearer ") ? h.slice(7).trim() || null : null;
 }
 
-async function handleApi(config: ServerConfig, accounts: AccountService, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+interface ApiCtx {
+  config: ServerConfig;
+  accounts: AccountService;
+  progress: Progress;
+}
+
+async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+  const { config, accounts, progress } = ctx;
   const method = req.method ?? "GET";
   try {
     if (path === "/admin/accounts/reset") {
@@ -290,21 +318,41 @@ async function handleApi(config: ServerConfig, accounts: AccountService, req: In
     const route = `${method} ${path}`;
     const session = bearer(req);
     const out = (r: unknown): void => (isAuthError(r) ? sendJson(res, r.status, { code: r.code, message: r.message }) : sendJson(res, 200, r));
+    /** Sertakan dompet (Trofi, Bintang, Koin, kelas) milik sesi pada jawaban. */
+    const walletOf = (sess: string | null): unknown => {
+      const id = accounts.idOfSession(sess);
+      return id ? progress.wallet(id) : null;
+    };
     switch (route) {
       case "POST /api/register": {
         const b = parseBody(schemas.register, await readJson(req));
-        return out(await accounts.register({ username: b.username, password: b.password, name: b.name ?? b.username.slice(0, 16), token: b.token }));
+        const r = await accounts.register({ username: b.username, password: b.password, name: b.name ?? b.username.slice(0, 16), token: b.token });
+        return out(isAuthError(r) ? r : { ...r, wallet: walletOf(r.session) });
       }
       case "POST /api/login": {
         const b = parseBody(schemas.login, await readJson(req));
-        return out(await accounts.login(b));
+        const r = await accounts.login(b);
+        return out(isAuthError(r) ? r : { ...r, wallet: walletOf(r.session) });
       }
       case "POST /api/logout":
         accounts.logout(session);
         return sendJson(res, 200, { ok: true });
       case "GET /api/me": {
         const me = accounts.me(session);
-        return me ? sendJson(res, 200, { account: me }) : sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        return me ? sendJson(res, 200, { account: me, wallet: walletOf(session) }) : sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+      }
+      case "GET /api/leaderboard": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const rows = progress.leaderboard(20).flatMap((row, i) => {
+          const n = accounts.nameOf(row.accountId);
+          const w = progress.wallet(row.accountId);
+          return n ? [{ rank: i + 1, name: n.name, kelas: w.kelas, trofi: row.trofi, isYou: row.accountId === me }] : [];
+        });
+        const mine = progress.wallet(me);
+        const all = progress.leaderboard(100000);
+        const pos = all.findIndex((r) => r.accountId === me);
+        return sendJson(res, 200, { rows, you: { rank: pos >= 0 ? pos + 1 : null, trofi: mine.trofi, kelas: mine.kelas } });
       }
       case "PUT /api/me": {
         const b = parseBody(schemas.profile, await readJson(req));

@@ -49,6 +49,7 @@ let connCounter = 0;
 export class FakeConn implements Conn {
   readonly id = `fake-${connCounter++}`;
   session: Conn["session"] = null;
+  account: Conn["account"] = null;
   msgs: ServerMessage[] = [];
   closedWith: number | null = null;
   send(msg: ServerMessage): void {
@@ -177,10 +178,11 @@ export function autoplay(client: Client, rng: () => number): void {
 /** Kunci yang boleh muncul di pesan state; selain ini berarti kebocoran. */
 export const STATE_KEYS = {
   top: ["type", "now", "room", "you", "game"],
-  room: ["id", "groupId", "phase", "gameId", "gameNo", "hostSeat", "maxSeats", "seats"],
-  seat: ["seat", "name", "connected", "cardsLeft", "isYou"],
+  room: ["id", "groupId", "phase", "gameId", "ranked", "gameNo", "hostSeat", "maxSeats", "seats"],
+  seat: ["seat", "name", "connected", "cardsLeft", "isYou", "registered"],
   game: ["kind", "ludo", "board", "ends", "turn", "turnDeadline", "yourHand", "yourMoves", "moveCount", "result"],
-  result: ["reason", "winner", "ranking"],
+  result: ["rewards", "reason", "winner", "ranking"],
+  reward: ["seat", "trofi", "bintang", "trofiTotal", "kelas", "kelasUp"],
   rank: ["seat", "rank", "points", "cardsLeft"],
 };
 
@@ -196,6 +198,7 @@ export function assertStateShape(msg: StateMessage): void {
     if (msg.game.result) {
       only(msg.game.result, STATE_KEYS.result, "result");
       for (const r of msg.game.result.ranking) only(r, STATE_KEYS.rank, "rank");
+      for (const r of msg.game.result.rewards ?? []) only(r, STATE_KEYS.reward, "reward");
     }
   }
 }

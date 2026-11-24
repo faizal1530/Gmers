@@ -8,6 +8,7 @@ export interface LobbyActions {
   onStart: () => void;
   onLeave: () => void;
   onSetGame: (game: "gaple" | "ludo") => void;
+  onSetRanked: (on: boolean) => void;
   onCopy: (url: string) => Promise<boolean>;
   origin: string;
 }
@@ -17,6 +18,7 @@ export function lobbyView(s: StateMessage, a: LobbyActions): HTMLElement {
   const seated = s.room.seats.filter((x) => x !== null);
   const isHost = s.you.seat === s.room.hostSeat;
   const hostName = s.room.seats[s.room.hostSeat]?.name ?? "";
+  const allRegistered = seated.every((x) => x?.registered);
   const copyNote = h("span", { class: "hint", role: "status", "aria-live": "polite" });
   const copyBtn = h(
     "button",
@@ -56,6 +58,21 @@ export function lobbyView(s: StateMessage, a: LobbyActions): HTMLElement {
       isHost
         ? h("div", { class: "seg", role: "radiogroup", "aria-label": id.gamePick.label }, (["gaple", "ludo"] as const).map((g) => h("button", { type: "button", role: "radio", class: `seg-btn${s.room.gameId === g ? " on" : ""}`, "aria-checked": String(s.room.gameId === g), "data-game": g, onclick: () => a.onSetGame(g) }, id.gamePick[g])))
         : h("p", { class: "game-label", "data-testid": "game-label" }, id.gamePick[s.room.gameId], " · ", id.gamePick.note),
+    ),
+    h(
+      "div",
+      { class: "panel", "data-testid": "ranked-pick" },
+      h("h2", {}, id.ranked.lobbyTitle),
+      isHost
+        ? h(
+            "div",
+            { class: "seg", role: "radiogroup", "aria-label": id.ranked.lobbyTitle },
+            ([false, true] as const).map((on) =>
+              h("button", { type: "button", role: "radio", class: `seg-btn${s.room.ranked === on ? " on" : ""}`, "aria-checked": String(s.room.ranked === on), "data-ranked": on ? "on" : "off", disabled: on && !allRegistered, onclick: () => a.onSetRanked(on) }, on ? id.ranked.rankedOn : id.ranked.casual),
+            ),
+          )
+        : h("p", { class: "game-label", "data-testid": "ranked-label" }, s.room.ranked ? id.ranked.rankedOn : id.ranked.casual),
+      h("p", { class: "hint" }, allRegistered || s.room.ranked ? id.ranked.lobbyNote : id.ranked.needAccounts),
     ),
     h(
       "div",

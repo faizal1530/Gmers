@@ -9,8 +9,9 @@ export type LogRecord =
   | { t: "sit"; roomId: string; ts: number; seat: number; tokenHash: string; name: string }
   | { t: "stand"; roomId: string; ts: number; seat: number }
   | { t: "setgame"; roomId: string; ts: number; game: GameId }
+  | { t: "ranked"; roomId: string; ts: number; on: boolean }
   /** `game` kosong = Gaple (catatan lama sebelum ada Ludo). */
-  | { t: "start"; roomId: string; ts: number; gameNo: number; seed: string; config: unknown; roomSeats: number[]; game?: GameId }
+  | { t: "start"; roomId: string; ts: number; gameNo: number; seed: string; config: unknown; roomSeats: number[]; game?: GameId; ranked?: boolean }
   | { t: "move"; roomId: string; ts: number; gameNo: number; move: unknown; auto?: true }
   | { t: "closed"; roomId: string; ts: number };
 

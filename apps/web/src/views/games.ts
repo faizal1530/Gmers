@@ -9,6 +9,8 @@ export interface GamesOptions {
   roomCode: string | null;
   onCreate: (name: string, game: "gaple" | "ludo") => void;
   onBackToRoom: () => void;
+  /** Konten tambahan di bawah kartu game (Ranked dan papan peringkat). */
+  extra?: HTMLElement[];
 }
 
 export function gamesView(o: GamesOptions): HTMLElement {
@@ -38,6 +40,7 @@ export function gamesView(o: GamesOptions): HTMLElement {
       h("div", { class: "cover ludo-cover", "aria-hidden": "true" }, [0, 1, 2, 3].map((i) => h("span", { class: `lc-pawn c${i}` }))),
       h("div", { class: "game-body" }, h("h2", {}, g.ludo.name), h("p", { class: "hint" }, g.ludo.tagline)),
     ),
+    ...(o.extra ?? []),
     h(
       "div",
       { class: "game-row" },

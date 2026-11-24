@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { isEngineError, type EngineError } from "@gmers/game-engine";
 import { adapterOf, GAME_IDS, type GameAdapter } from "./games";
+import { Matchmaker, type QueuedPlayer } from "./matchmaking";
+import type { Reward, SettleInput } from "./progress";
 import { realClock, type Clock } from "./clock";
 import type { ServerConfig } from "./config";
 import { NoopEventSink, type EventName, type EventSink } from "./events";
@@ -14,6 +16,8 @@ export interface Conn {
   send(msg: ServerMessage): void;
   close(code?: number, reason?: string): void;
   session: { roomId: string; tokenHash: string } | null;
+  /** Akun yang sudah masuk lewat `auth` pada koneksi ini (null = tamu). */
+  account: { id: string; username: string; name: string; token: string } | null;
 }
 
 interface Member {
@@ -37,6 +41,10 @@ interface ActiveGame {
   devices: string[];
   deadline: number | null;
   cancelTimer: (() => void) | null;
+  /** Room Ranked saat game ini dimulai. */
+  ranked: boolean;
+  /** Hadiah game ini per kursi room (setelah game selesai). */
+  rewards: { seat: number; trofi: number; bintang: number; trofiTotal: number; kelas: string; kelasUp: string | null }[];
 }
 
 /** Kelompok = kode pada tautan. Tidak pernah kedaluwarsa; sesi room di bawahnya boleh dibersihkan dan dibuat ulang. */
@@ -56,12 +64,25 @@ export interface Room {
   phase: "lobby" | "playing" | "finished";
   /** Game yang dipilih untuk sesi ini (bisa diganti pemilik di lobi atau setelah game selesai). */
   gameId: GameId;
+  /** Room Ranked (Trofi berubah). */
+  ranked: boolean;
+  /** Giliran berturut-turut yang dimainkan otomatis per kursi room (tanda meninggalkan game). */
+  autoStreak: Map<number, number>;
   gameNo: number;
   game: ActiveGame | null;
   lastWinnerSeat: number | null;
 }
 
+/** Kaitan ke layanan akun dan ekonomi. Semua opsional: tanpa kaitan, room berjalan sebagai tamu semua. */
+export interface Hooks {
+  authenticate?(session: string): { id: string; username: string; name: string; token: string } | null;
+  accountIdOf?(tokenHash: string): string | null;
+  /** Catat hasil game (Trofi, Bintang). Mengembalikan hadiah per akun. */
+  settle?(input: SettleInput): Reward[];
+}
+
 export interface ServiceDeps {
+  hooks?: Hooks;
   clock?: Clock;
   log?: RoomLog;
   events?: EventSink;
@@ -96,6 +117,8 @@ export class RoomService {
   private readonly events: EventSink;
   private readonly newGroupId: () => string;
   private readonly newSeed: () => string;
+  private readonly hooks: Hooks;
+  private readonly matchmaker: Matchmaker<Conn>;
   private readonly onSeat: ((tokenHash: string, groupId: string) => void) | undefined;
   private cancelSweep: (() => void) | null = null;
   private stopped = false;
@@ -109,6 +132,8 @@ export class RoomService {
     this.events = deps.events ?? new NoopEventSink();
     this.newGroupId = deps.newGroupId ?? defaultRoomId;
     this.onSeat = deps.onSeat;
+    this.hooks = deps.hooks ?? {};
+    this.matchmaker = new Matchmaker<Conn>(this.clock, this.cfg.economy, (players, game) => this.startRankedMatch(players, game));
     this.newSeed = deps.newSeed ?? (() => randomBytes(12).toString("hex"));
   }
 
@@ -130,6 +155,7 @@ export class RoomService {
   stop(): void {
     this.stopped = true;
     this.cancelSweep?.();
+    this.matchmaker.stop();
     for (const room of this.rooms.values()) room.game?.cancelTimer?.();
   }
 
@@ -196,6 +222,11 @@ export class RoomService {
           room.lastActivity = rec.ts;
           break;
         }
+        case "ranked": {
+          const room = this.rooms.get(rec.roomId);
+          if (room) room.ranked = rec.on;
+          break;
+        }
         case "setgame": {
           const room = this.rooms.get(rec.roomId);
           if (room) room.gameId = rec.game;
@@ -208,7 +239,7 @@ export class RoomService {
           room.phase = "playing";
           const adapter = adapterOf(rec.game);
           room.gameId = adapter.id;
-          room.game = { adapter, state: adapter.restore(rec.config, rec.seed), roomSeats: rec.roomSeats, devices: this.deviceIds(room, rec.roomSeats), deadline: null, cancelTimer: null };
+          room.game = { adapter, state: adapter.restore(rec.config, rec.seed), roomSeats: rec.roomSeats, devices: this.deviceIds(room, rec.roomSeats), deadline: null, cancelTimer: null, ranked: !!rec.ranked, rewards: [] };
           room.lastActivity = rec.ts;
           break;
         }
@@ -217,6 +248,10 @@ export class RoomService {
           if (!room?.game || room.gameNo !== rec.gameNo) break;
           const next = room.game.adapter.apply(room.game.state, rec.move);
           if (isEngineError(next)) throw new Error(`Log rusak untuk room ${rec.roomId}: ${(next as EngineError).code}`);
+          {
+            const roomSeat = room.game.roomSeats[(rec.move as { seat: number }).seat] as number;
+            room.autoStreak.set(roomSeat, rec.auto ? (room.autoStreak.get(roomSeat) ?? 0) + 1 : 0);
+          }
           room.game.state = next;
           if (room.game.adapter.outcome(next)) this.markFinished(room, next);
           room.lastActivity = rec.ts;
@@ -244,6 +279,8 @@ export class RoomService {
       seats: Array.from({ length: this.cfg.maxSeats }, () => null),
       phase: "lobby",
       gameId: "gaple",
+      ranked: false,
+      autoStreak: new Map(),
       gameNo: 0,
       game: null,
       lastWinnerSeat: null,
@@ -317,6 +354,7 @@ export class RoomService {
         moveCount: ad.moveCount(st),
         result: out
           ? {
+              rewards: game.rewards,
               reason: out.reason,
               winner: game.roomSeats[out.winner] as number,
               ranking: out.ranking.map((r) => ({ seat: game.roomSeats[r.seat] as number, rank: r.rank, points: r.points, cardsLeft: r.cardsLeft })),
@@ -332,6 +370,7 @@ export class RoomService {
         groupId: room.groupId,
         phase: room.phase,
         gameId: room.gameId,
+        ranked: room.ranked,
         gameNo: room.gameNo,
         hostSeat: room.hostSeat,
         maxSeats: this.cfg.maxSeats,
@@ -344,6 +383,7 @@ export class RoomService {
             connected: m.conn !== null,
             cardsLeft: game && es >= 0 ? game.adapter.remaining(game.state, es) : null,
             isYou: m === member,
+            registered: (this.hooks.accountIdOf?.(m.tokenHash) ?? null) !== null,
           };
         }),
       },
@@ -374,8 +414,11 @@ export class RoomService {
   /** Waktu habis: lewat bila tidak ada langkah lain; selain itu kartu sah pertama. */
   private autoMove(room: Room): void {
     const game = room.game as ActiveGame;
-    const move = game.adapter.auto(game.state, game.adapter.turn(game.state));
+    const seat = game.adapter.turn(game.state);
+    const move = game.adapter.auto(game.state, seat);
     if (!move) return;
+    const roomSeat = game.roomSeats[seat] as number;
+    room.autoStreak.set(roomSeat, (room.autoStreak.get(roomSeat) ?? 0) + 1);
     this.commitMove(room, move, true);
     this.broadcast(room);
   }
@@ -391,6 +434,7 @@ export class RoomService {
     const out = game.adapter.outcome(next);
     if (out) {
       this.markFinished(room, next);
+      this.settle(room, out);
       const ranking = out.ranking.map((r) => game.roomSeats[r.seat]).join(">");
       this.emit(
         room,
@@ -402,6 +446,23 @@ export class RoomService {
       this.armTimer(room);
     }
     return null;
+  }
+
+  /** Catat hasil: Trofi (Ranked) dan Bintang lewat buku besar. Dihitung di server, hanya untuk pemain terdaftar. */
+  private settle(room: Room, out: NonNullable<ReturnType<GameAdapter["outcome"]>>): void {
+    const game = room.game as ActiveGame;
+    if (!this.hooks.settle) return;
+    const players = game.roomSeats.map((roomSeat, es) => ({
+      roomSeat,
+      accountId: this.hooks.accountIdOf?.(room.seats[roomSeat]?.tokenHash ?? "") ?? null,
+      rank: out.ranking.find((r) => r.seat === es)?.rank ?? game.roomSeats.length,
+      abandoned: (room.autoStreak.get(roomSeat) ?? 0) >= this.cfg.economy.abandonAfterAuto,
+    }));
+    const rewards = this.hooks.settle({ ref: `${room.id}:${room.gameNo}`, ts: this.clock.now(), ranked: game.ranked, players });
+    game.rewards = rewards.flatMap((r) => {
+      const p = players.find((x) => x.accountId === r.accountId);
+      return p ? [{ seat: p.roomSeat, trofi: r.trofi, bintang: r.bintang, trofiTotal: r.trofiTotal, kelas: r.kelas, kelasUp: r.kelasUp }] : [];
+    });
   }
 
   // ---------- pesan klien ----------
@@ -420,6 +481,12 @@ export class RoomService {
       case "ping":
         conn.send({ type: "pong", now: this.clock.now() });
         return;
+      case "auth":
+        return this.authenticate(conn, msg.session);
+      case "queue_ranked":
+        return this.queueRanked(conn, msg.game);
+      case "cancel_queue":
+        return this.cancelQueue(conn);
       case "create_room":
         return this.createGroup(conn, msg.name, msg.token, msg.game);
       case "open_link":
@@ -447,6 +514,8 @@ export class RoomService {
         return this.nudge(conn, room, member);
       case "set_game":
         return this.setGame(conn, room, member, msg.game);
+      case "set_ranked":
+        return this.setRanked(conn, room, member, msg.on);
       case "play":
       case "pass":
       case "roll":
@@ -594,6 +663,11 @@ export class RoomService {
     this.bind(conn, room, member);
     this.emit(room, "player_joined", tokenHash, `seat=${seat}`);
     this.onSeat?.(tokenHash, room.groupId);
+    if (room.ranked && (this.hooks.accountIdOf?.(tokenHash) ?? null) === null) {
+      // Tamu duduk di room Ranked: Ranked dimatikan agar adil bagi yang lain.
+      room.ranked = false;
+      this.append({ t: "ranked", roomId: room.id, ts: this.clock.now(), on: false });
+    }
     this.broadcast(room);
   }
 
@@ -608,6 +682,10 @@ export class RoomService {
         return;
       }
     }
+    if (room.ranked && !this.allRegistered(room)) {
+      conn.send(err("NOT_ALL_REGISTERED", "Ranked hanya untuk room yang semua pemainnya sudah punya akun."));
+      return;
+    }
     const roomSeats = room.seats.flatMap((m, i) => (m ? [i] : []));
     if (roomSeats.length < this.cfg.minPlayersToStart) {
       conn.send(err("NEED_MORE_PLAYERS", `Butuh minimal ${this.cfg.minPlayersToStart} pemain untuk mulai.`));
@@ -620,10 +698,11 @@ export class RoomService {
     const created = adapter.create(roomSeats.length, seed, winnerEngine >= 0 ? winnerEngine : null, this.cfg);
     room.gameNo += 1;
     room.phase = "playing";
-    room.game = { adapter, state: created.state, roomSeats, devices: this.deviceIds(room, roomSeats), deadline: null, cancelTimer: null };
+    room.autoStreak = new Map();
+    room.game = { adapter, state: created.state, roomSeats, devices: this.deviceIds(room, roomSeats), deadline: null, cancelTimer: null, ranked: room.ranked, rewards: [] };
     const config = created.config;
-    this.append({ t: "start", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, seed, config, roomSeats, game: adapter.id });
-    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0};devices=${room.game?.devices.join("|") ?? ""};game=${adapter.id}`);
+    this.append({ t: "start", roomId: room.id, ts: this.clock.now(), gameNo: room.gameNo, seed, config, roomSeats, game: adapter.id, ranked: room.ranked });
+    this.emit(room, "game_started", null, `players=${roomSeats.length};rematch=${rematch ? 1 : 0};devices=${room.game?.devices.join("|") ?? ""};game=${adapter.id};ranked=${room.ranked ? 1 : 0}`);
     this.armTimer(room);
     this.broadcast(room);
   }
@@ -692,6 +771,106 @@ export class RoomService {
     for (const m of room.seats) m?.conn?.send(msg);
   }
 
+  // ---------- akun, Ranked, antrean ----------
+
+  private authenticate(conn: Conn, session: string): void {
+    const acc = this.hooks.authenticate?.(session) ?? null;
+    if (!acc) {
+      conn.account = null;
+      conn.send(err("UNAUTHORIZED", "Sesi masuk tidak berlaku. Masuk lagi."));
+      return;
+    }
+    conn.account = acc;
+    conn.send({ type: "auth_ok", username: acc.username, name: acc.name });
+    const w = this.matchmaker.waiting(acc.id);
+    conn.send({ type: "queue", state: w ? "waiting" : "idle", game: w?.game ?? null, since: w?.since ?? null });
+  }
+
+  private allRegistered(room: Room): boolean {
+    return room.seats.filter(Boolean).every((m) => (this.hooks.accountIdOf?.((m as Member).tokenHash) ?? null) !== null);
+  }
+
+  /** Pemilik menyalakan atau mematikan Ranked. Hanya bila semua yang duduk punya akun. */
+  private setRanked(conn: Conn, room: Room, member: Member, on: boolean): void {
+    if (member.seat !== room.hostSeat) {
+      conn.send(err("NOT_HOST", "Hanya pembuat room yang bisa mengatur Ranked."));
+      return;
+    }
+    if (room.phase === "playing") {
+      conn.send(err("WRONG_PHASE", "Game sedang berjalan."));
+      return;
+    }
+    if (on && !this.allRegistered(room)) {
+      conn.send(err("NOT_ALL_REGISTERED", "Ranked hanya untuk room yang semua pemainnya sudah punya akun."));
+      return;
+    }
+    if (room.ranked !== on) {
+      room.ranked = on;
+      this.append({ t: "ranked", roomId: room.id, ts: this.clock.now(), on });
+    }
+    this.broadcast(room);
+  }
+
+  private queueRanked(conn: Conn, game: GameId): void {
+    if (!conn.account) {
+      conn.send(err("NOT_LOGGED_IN", "Masuk atau daftar dulu untuk main Ranked."));
+      return;
+    }
+    const ctx = this.contextOf(conn);
+    if (ctx?.room.phase === "playing") {
+      conn.send(err("ALREADY_PLAYING", "Selesaikan game yang sedang berjalan dulu."));
+      return;
+    }
+    if (!GAME_IDS.includes(game)) {
+      conn.send(err("BAD_GAME", "Game tidak dikenal."));
+      return;
+    }
+    const w = this.matchmaker.enqueue(conn, conn.account.id, game);
+    // Bila pasangan langsung ditemukan, conn sudah dipindah ke room baru dan antrean kosong.
+    const still = this.matchmaker.waiting(conn.account.id);
+    conn.send({ type: "queue", state: still ? "waiting" : "idle", game: still ? w.game : null, since: still ? w.since : null });
+  }
+
+  private cancelQueue(conn: Conn): void {
+    if (conn.account) this.matchmaker.remove(conn.account.id);
+    conn.send({ type: "queue", state: "idle", game: null, since: null });
+  }
+
+  /** Buat room Ranked dari pemain antrean dan langsung mulai. Pemain pertama menjadi "pemilik". */
+  private startRankedMatch(players: QueuedPlayer<Conn>[], game: GameId): void {
+    const live = players.filter((p) => p.conn.account);
+    if (live.length < 2) {
+      for (const p of live) this.matchmaker.enqueue(p.conn, p.accountId, game);
+      return;
+    }
+    let id = this.newGroupId();
+    while (this.groups.has(id)) id = this.newGroupId();
+    const now = this.clock.now();
+    this.groups.set(id, { id, createdAt: now, liveRoomId: null });
+    this.append({ t: "group", groupId: id, ts: now });
+    const room = this.newSession(this.groups.get(id) as Group, true);
+    room.gameId = game;
+    room.ranked = true;
+    this.append({ t: "setgame", roomId: room.id, ts: now, game });
+    this.append({ t: "ranked", roomId: room.id, ts: now, on: true });
+    let first: { conn: Conn; member: Member } | null = null;
+    live.forEach((p, seat) => {
+      const acc = p.conn.account as NonNullable<Conn["account"]>;
+      this.detach(p.conn);
+      const tokenHash = hashToken(acc.token, this.cfg.hashSalt);
+      const member: Member = { seat, tokenHash, name: acc.name, conn: null, chatTimes: [], lastNudge: null };
+      this.seatMember(room, seat, member);
+      this.append({ t: "sit", roomId: room.id, ts: now, seat, tokenHash, name: acc.name });
+      this.bind(p.conn, room, member);
+      this.emit(room, "player_joined", tokenHash, `seat=${seat};ranked=1`);
+      this.onSeat?.(tokenHash, room.groupId);
+      first ??= { conn: p.conn, member };
+    });
+    for (const p of live) p.conn.send({ type: "match_found", groupId: room.groupId });
+    const f = first as { conn: Conn; member: Member } | null;
+    if (f) this.startGame(f.conn, room, f.member, false);
+  }
+
   /** Pemilik memilih game untuk room (di lobi atau setelah game selesai). */
   private setGame(conn: Conn, room: Room, member: Member, game: GameId): void {
     if (member.seat !== room.hostSeat) {
@@ -740,12 +919,14 @@ export class RoomService {
       conn.send(error);
       return;
     }
+    room.autoStreak.set(member.seat, 0);
     this.broadcast(room);
   }
 
   // ---------- koneksi ----------
 
   onDisconnect(conn: Conn): void {
+    this.matchmaker.dropConn(conn);
     const ctx = this.contextOf(conn);
     conn.session = null;
     if (!ctx) return;

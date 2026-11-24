@@ -377,3 +377,32 @@ a { color: var(--accent); }
 .game-card.ludo-card { padding: 0 0 14px; overflow: hidden; gap: 8px; }
 .game-card.ludo-card .game-body { padding-inline: 14px; }
 .game-label { font-weight: 700; }
+
+/* ===== Ranked, dompet, papan peringkat ===== */
+.pad { padding-inline: 14px; }
+.ranked-card { padding: 14px 0; gap: 8px; }
+.ranked-card .game-body { padding-inline: 14px; }
+.queue-line { font-weight: 800; }
+.kls { display: inline-flex; align-items: center; font-size: 0.72rem; font-weight: 800; padding: 3px 10px; border-radius: 999px; color: #fff; white-space: nowrap; }
+.kls.k0 { background: #7a8a8c; } .kls.k1 { background: #2e8b57; } .kls.k2 { background: #2e6fb5; }
+.kls.k3 { background: #7a5aa6; } .kls.k4 { background: #b07a00; }
+.wallet-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.wallet-n { font-weight: 800; font-size: 1.05rem; }
+.progressbar { height: 10px; border-radius: 5px; background: var(--soft); overflow: hidden; }
+.progressbar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 5px; }
+.board-rows { display: flex; flex-direction: column; gap: 6px; }
+.brow { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 10px; border-radius: 12px; background: var(--soft); }
+.brow.you { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.brow .rank-n { width: 26px; height: 26px; font-size: 0.8rem; }
+.chip-reward { font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; }
+.chip-reward.up { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+.chip-reward.down { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
+.rank.first .chip-reward { background: rgba(0, 0, 0, 0.12); color: #1b1300; }
+.reward { border: 2px solid var(--gold); }
+.classup { font-weight: 800; color: var(--accent); }
+
+/* Baris peringkat: nama diberi lebar minimum; statistik membungkus ke baris bawah bila sempit. */
+.rank { flex-wrap: wrap; row-gap: 2px; }
+.rank .grow { flex: 1 1 7rem; min-width: 7rem; overflow-wrap: anywhere; }
+.rank .muted { font-size: 0.85rem; }
+.brow .grow { min-width: 0; overflow-wrap: anywhere; }

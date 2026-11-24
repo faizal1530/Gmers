@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
-import { startServer, defaultServerConfig } from "@gmers/server";
+import { startServer, defaultServerConfig, DEFAULT_ECONOMY } from "@gmers/server";
 import { id } from "../src/i18n/id";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   check(existsSync(join(dist, "index.html")), "hasil build ada");
 
   const dataDir = mkdtempSync(join(tmpdir(), "gmers-e2e-"));
-  const server = await startServer({ ...defaultServerConfig, port: 0, host: "127.0.0.1", dataDir, staticDir: dist, eventsCsvFile: "events.csv", adminToken: null });
+  const server = await startServer({ ...defaultServerConfig, port: 0, host: "127.0.0.1", dataDir, staticDir: dist, eventsCsvFile: "events.csv", adminToken: null, passwordCost: 1024, economy: { ...DEFAULT_ECONOMY, queueWaitMs: 1500 } });
   const base = `http://127.0.0.1:${server.port}`;
   log(`server di ${base}`);
 
@@ -346,6 +346,42 @@ async function main(): Promise<void> {
     await L2.click('[data-testid="rematch"]');
     for (const p of [L1, L2]) await p.waitForSelector('[data-testid="ludo-board"]');
     check(true, "rematch Ludo memakai game yang sama");
+
+    // 6c. Ranked lawan acak: dua akun mengantre, dicocokkan, bermain Ludo penuh, Trofi dihitung server
+    const regAccount = async (page: Page, user: string, nick: string): Promise<void> => {
+      await page.goto(base);
+      await page.fill("#nama", nick);
+      await page.click('[data-testid="tab-profile"]');
+      await page.fill("#akun-user", user);
+      await page.fill("#akun-pass", "rahasia-ranked-1");
+      await page.click('[data-testid="account-submit"]');
+      await page.waitForSelector('[data-testid="account-user"]');
+    };
+    const R1 = await extraPage();
+    const R2 = await extraPage();
+    await regAccount(R1, "rani_e2e", "Rani");
+    await regAccount(R2, "rudi_e2e", "Rudi");
+    await R1.click('[data-testid="tab-games"]');
+    check(((await R1.textContent('[data-testid="ranked-card"]')) ?? "").includes("Ranked lawan acak"), "kartu Ranked tampil untuk akun terdaftar");
+    await shot(R1, "15-ranked-games");
+    await R1.click('[data-testid="find-ludo"]');
+    await R1.waitForSelector('[data-testid="queue-waiting"]');
+    check(true, "status antrean 'Mencari lawan' tampil");
+    await R2.click('[data-testid="tab-games"]');
+    await R2.click('[data-testid="find-ludo"]');
+    for (const p of [R1, R2]) await p.waitForSelector('[data-testid="ludo-board"]', { timeout: 15_000 });
+    check(true, "dua pemain dicocokkan otomatis dan game Ranked Ludo langsung mulai");
+    await playLudo([R1, R2]);
+    for (const p of [R1, R2]) await p.waitForSelector('[data-testid="my-reward"]');
+    const chips = await R1.$$eval('[data-testid="reward-chip"]', (els) => els.map((e) => e.textContent?.trim() ?? ""));
+    check(chips.includes("+12 Trofi") && chips.includes("+0 Trofi"), `hadiah Ranked dihitung server: pemenang +12 Trofi (10 + bonus harian 2), yang kalah +0 karena lantai (${chips.join(" / ")})`);
+    await shot(R1, "16-ranked-hasil");
+    await R1.click('[data-testid="tab-games"]');
+    await R1.waitForSelector('[data-testid="leaderboard"] .brow');
+    const boardRows = await R1.locator('[data-testid="leaderboard"] .brow').count();
+    check(boardRows >= 1, `papan peringkat menampilkan pemain Ranked (${boardRows} baris)`);
+    await shot(R1, "17-papan-peringkat");
+    await noHorizontalOverflow(R1, "tab games dengan Ranked dan papan");
 
     // 7. Akun: daftar, tetap masuk setelah muat ulang, masuk dari perangkat lain, room tetap di daftar
     const extra = async (): Promise<Page> => {

@@ -1,6 +1,6 @@
 import type { Card } from "@gmers/game-engine";
 import type { ClientMessage, ServerMessage, StateMessage } from "@gmers/server/protocol";
-import { Api, type AccountInfo } from "./api";
+import { Api, type AccountInfo, type LeaderRow, type WalletInfo } from "./api";
 import { clear, h } from "./dom";
 import { id } from "./i18n/id";
 import { cardKey, checkName, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
@@ -16,6 +16,7 @@ import { ludoView } from "./views/ludo";
 import { errorView, notFoundView, privacyView } from "./views/misc";
 import { tabBar, type Tab } from "./views/nav";
 import { profileView } from "./views/profile";
+import { leaderboardView, rankedCard, walletPanel, type QueueState } from "./views/ranked";
 import { resultView } from "./views/result";
 import { tableView, type LastMove } from "./views/table";
 import { nameForm } from "./views/forms";
@@ -111,6 +112,11 @@ export class App {
   private readonly sound: SoundLike;
   private readonly api: Api;
   private account: { username: string } | null = null;
+  private wallet: WalletInfo | null = null;
+  private queue: QueueState = { state: "idle", game: null, since: null };
+  private queueStartedAt = 0;
+  private pendingQueue: "gaple" | "ludo" | null = null;
+  private board: { rows: LeaderRow[]; you: { rank: number | null } } | null = null;
   private client: GameClient | null = null;
   private route: Route = { kind: "home" };
   private tab: Tab = "games";
@@ -195,7 +201,10 @@ export class App {
     if (cached) this.account = { username: cached.username };
     this.render(true);
     void this.api.me().then((r) => {
-      if (r.ok) this.applyAccount(r.data.account);
+      if (r.ok) {
+        this.applyAccount(r.data.account, r.data.wallet ?? null);
+        void this.refreshBoard();
+      }
       else if (r.status === 401) {
         // Sesi dicabut (admin reset atau kata sandi diganti di perangkat lain).
         this.identity.setSession(null);
@@ -218,7 +227,8 @@ export class App {
   }
 
   /** Terapkan data akun dari server. Mengembalikan true bila identitas room berganti. */
-  private applyAccount(acc: AccountInfo): boolean {
+  private applyAccount(acc: AccountInfo, wallet: WalletInfo | null): boolean {
+    this.wallet = wallet;
     const changed = this.identity.token() !== acc.token;
     if (changed) this.identity.setToken(acc.token);
     this.identity.setName(acc.name);
@@ -235,6 +245,41 @@ export class App {
     return changed;
   }
 
+  /** Papan peringkat dari server (butuh akun). */
+  private async refreshBoard(): Promise<void> {
+    if (!this.account) return;
+    const r = await this.api.leaderboard();
+    if (r.ok) {
+      this.board = { rows: r.data.rows, you: r.data.you };
+      this.render(false);
+    }
+  }
+
+  private findMatch(game: "gaple" | "ludo"): void {
+    if (!this.account) return;
+    this.pendingQueue = game;
+    this.queue = { state: "waiting", game, since: null };
+    this.queueStartedAt = Date.now();
+    this.ensureClient();
+    // Bila sudah tersambung dan dikenali, kirim langsung; bila belum, dikirim setelah auth_ok.
+    if (this.client?.isOpen && this.authed) {
+      this.pendingQueue = null;
+      this.sendMsg({ type: "queue_ranked", game });
+    }
+    this.render(true);
+  }
+
+  private cancelMatch(): void {
+    this.pendingQueue = null;
+    this.queue = { state: "idle", game: null, since: null };
+    this.sendMsg({ type: "cancel_queue" });
+    this.render(true);
+  }
+
+  private get authed(): boolean {
+    return this.account !== null && this.client?.isOpen === true;
+  }
+
   private reload(): void {
     (this.deps.reload ?? (() => window.location.reload()))();
   }
@@ -244,7 +289,7 @@ export class App {
     const r = await this.api.register({ username: username.trim(), password, name: nm.ok ? nm.name : undefined, token: this.identity.token() });
     if (!r.ok) return r.message;
     this.identity.setSession(r.data.session);
-    const changed = this.applyAccount(r.data.account);
+    const changed = this.applyAccount(r.data.account, r.data.wallet ?? null);
     this.showToast(id.account.created);
     if (changed && this.client) this.reload();
     this.render(true);
@@ -255,7 +300,7 @@ export class App {
     const r = await this.api.login({ username: username.trim(), password });
     if (!r.ok) return r.message;
     this.identity.setSession(r.data.session);
-    const changed = this.applyAccount(r.data.account);
+    const changed = this.applyAccount(r.data.account, r.data.wallet ?? null);
     this.showToast(id.account.welcome(r.data.account.name));
     if (changed && (this.client || this.room)) this.reload();
     this.render(true);
@@ -268,6 +313,7 @@ export class App {
     this.identity.setCachedAccount(null);
     this.identity.setToken(randomToken());
     this.account = null;
+    this.wallet = null;
     this.store.clear();
     this.reload();
   }
@@ -317,10 +363,13 @@ export class App {
   private openMessages(): ClientMessage[] {
     const token = this.identity.token();
     const i = this.intent;
-    if (i.kind === "create") return [{ type: "create_room", name: i.name, token, game: i.game }];
-    if (i.kind === "open") return [{ type: "open_link", groupId: i.groupId, token }];
-    if (i.kind === "join") return [{ type: "join", groupId: i.groupId, name: i.name, token }];
-    return [];
+    // Akun masuk: kenali koneksi ini dulu (dibutuhkan untuk Ranked dan fitur akun lain).
+    const session = this.identity.session();
+    const auth: ClientMessage[] = session && /^[0-9a-f]{64}$/.test(session) ? [{ type: "auth", session }] : [];
+    if (i.kind === "create") return [...auth, { type: "create_room", name: i.name, token, game: i.game }];
+    if (i.kind === "open") return [...auth, { type: "open_link", groupId: i.groupId, token }];
+    if (i.kind === "join") return [...auth, { type: "join", groupId: i.groupId, name: i.name, token }];
+    return auth;
   }
 
   private flush(): void {
@@ -377,6 +426,23 @@ export class App {
         return;
       case "pong":
         return;
+      case "auth_ok":
+        if (this.pendingQueue) {
+          const g = this.pendingQueue;
+          this.pendingQueue = null;
+          this.sendMsg({ type: "queue_ranked", game: g });
+        }
+        return;
+      case "queue":
+        if (m.state === "waiting" && this.queue.state !== "waiting") this.queueStartedAt = Date.now();
+        this.queue = { state: m.state, game: m.game, since: m.since };
+        this.render(false);
+        return;
+      case "match_found":
+        this.queue = { state: "idle", game: null, since: null };
+        this.sound.play("start");
+        this.showToast(id.ranked.found);
+        return;
     }
   }
 
@@ -424,6 +490,11 @@ export class App {
       setTimeout(() => this.sound.play("turn"), 50);
     }
     if (prev && prev.room.phase !== "finished" && phaseNow === "finished" && m.game?.result) {
+      const mine = m.game.result.rewards?.find((r) => r.seat === m.you.seat);
+      if (mine && this.wallet) {
+        this.wallet = { ...this.wallet, trofi: mine.trofiTotal, bintang: this.wallet.bintang + mine.bintang, kelas: mine.kelas };
+        void this.refreshBoard();
+      }
       const won = m.game.result.winner === m.you.seat;
       this.addSys(m, id.chat.sysFinish(m.room.seats[m.game.result.winner]?.name ?? ""));
       setTimeout(() => this.sound.play(won ? "win" : "lose"), 350);
@@ -562,6 +633,7 @@ export class App {
       window.history.pushState(null, "", this.room ? `/g/${this.room.room.groupId}` : "/");
     }
     this.tab = t;
+    if (t === "games") void this.refreshBoard();
     if (t === "chat") this.hub.showList();
     this.hub.setActive(t === "chat");
     this.render(true);
@@ -614,6 +686,8 @@ export class App {
         fill.classList.toggle("low", ratio < 0.25);
       }
     }
+    const qw = this.main.querySelector<HTMLElement>('[data-testid="queue-waiting"]');
+    if (qw && this.queue.state === "waiting") qw.textContent = `${id.ranked.searching} ${id.gamePick[this.queue.game ?? "gaple"]} · ${id.ranked.waited(Math.floor((Date.now() - this.queueStartedAt) / 1000))}`;
     const nudge = this.main.querySelector<HTMLButtonElement>("#nudge");
     if (nudge) {
       const cooling = Date.now() < this.nudgeUntil;
@@ -663,7 +737,7 @@ export class App {
     if (this.route.kind === "notfound") return "notfound";
     switch (this.tab) {
       case "games":
-        return `games:${this.busy}:${this.room?.room.groupId ?? ""}`;
+        return `games:${this.busy}:${this.room?.room.groupId ?? ""}:${this.queue.state}:${this.account?.username ?? ""}:${this.board?.rows.length ?? -1}:${this.board?.you.rank ?? ""}`;
       case "room": {
         if (this.room) return "room";
         const i = this.info;
@@ -672,7 +746,7 @@ export class App {
       case "chat":
         return "chat";
       case "profile":
-        return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}:${this.account?.username ?? ""}`;
+        return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}:${this.account?.username ?? ""}:${this.wallet?.trofi ?? ""}:${this.wallet?.bintang ?? ""}`;
     }
   }
 
@@ -686,6 +760,8 @@ export class App {
     clear(this.main);
     this.main.classList.toggle("stale", !!this.room && this.status !== "open");
     this.main.append(this.buildScreen());
+    // Lebar bilah kemajuan kelas diatur lewat CSSOM (CSP melarang atribut style inline).
+    for (const bar of this.main.querySelectorAll<HTMLElement>("#kelasfill")) bar.style.width = `${bar.dataset.pct ?? "0"}%`;
     this.updateTimer();
   }
 
@@ -702,6 +778,17 @@ export class App {
           roomCode: this.room?.room.groupId ?? null,
           onCreate: (n, g) => this.create(n, g),
           onBackToRoom: () => this.selectTab("room"),
+          extra: [
+            rankedCard({
+              loggedIn: this.account !== null,
+              queue: this.queue,
+              waited: Math.floor((Date.now() - this.queueStartedAt) / 1000),
+              onFind: (g) => this.findMatch(g),
+              onCancel: () => this.cancelMatch(),
+              onToProfile: () => this.selectTab("profile"),
+            }),
+            ...(this.account ? [leaderboardView(this.board?.rows ?? null, this.board?.you ?? null)] : []),
+          ],
         });
       case "room":
         if (this.room) return this.buildRoom(this.room);
@@ -718,6 +805,7 @@ export class App {
             onChangePassword: (o, n) => this.doChangePassword(o, n),
             onDelete: (p) => this.doDelete(p),
           },
+          wallet: walletPanel(this.wallet, this.account !== null),
           name: this.identity.name() ?? "",
           theme: this.theme,
           soundOn: this.sound.enabled,
@@ -808,6 +896,7 @@ export class App {
         onStart: () => this.sendMsg({ type: "start" }),
         onLeave: () => this.sendMsg({ type: "leave" }),
         onSetGame: (game) => this.sendMsg({ type: "set_game", game }),
+        onSetRanked: (on) => this.sendMsg({ type: "set_ranked", on }),
       });
     }
     if (s.room.phase === "finished") {

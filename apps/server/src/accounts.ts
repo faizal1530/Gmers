@@ -274,6 +274,26 @@ export class AccountService {
     return this.byId.get(s.id) ?? null;
   }
 
+  /** Akun milik sesi (termasuk id internal), atau null. */
+  identify(session: string | null): { id: string; username: string; name: string; token: string } | null {
+    const a = this.find(session);
+    return a ? { id: a.id, username: a.username, name: a.name, token: a.token } : null;
+  }
+
+  accountIdByTokenHash(tokenHash: string): string | null {
+    return this.byTokenHash.get(tokenHash) ?? null;
+  }
+
+  /** Nama tampilan dan nama pengguna sebuah akun (untuk papan peringkat). */
+  nameOf(accountId: string): { name: string; username: string } | null {
+    const a = this.byId.get(accountId);
+    return a ? { name: a.name, username: a.username } : null;
+  }
+
+  idOfSession(session: string | null): string | null {
+    return this.find(session)?.id ?? null;
+  }
+
   me(session: string | null): PublicAccount | null {
     const a = this.find(session);
     return a ? this.pub(a) : null;

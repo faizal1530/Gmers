@@ -98,7 +98,7 @@ export function mount(path = "/", kv = memoryKV(), opts: { copyOk?: boolean; fet
   return { app, root, sockets, kv, sound, reloads, sock: () => sockets[sockets.length - 1] as FakeSocket, copied };
 }
 
-type Seat = { name: string; connected?: boolean; cardsLeft?: number | null };
+type Seat = { name: string; connected?: boolean; cardsLeft?: number | null; registered?: boolean };
 
 export function mkState(o: {
   phase?: "lobby" | "playing" | "finished";
@@ -113,6 +113,7 @@ export function mkState(o: {
   result?: NonNullable<StateMessage["game"]>["result"];
   groupId?: string;
   gameId?: "gaple" | "ludo";
+  ranked?: boolean;
   ludo?: import("@gmers/server/protocol").LudoView | null;
   deadline?: number | null;
   now?: number;
@@ -128,10 +129,11 @@ export function mkState(o: {
       groupId: o.groupId ?? "ABCDEF",
       phase,
       gameId: o.gameId ?? "gaple",
+      ranked: o.ranked ?? false,
       gameNo: phase === "lobby" ? 0 : 1,
       hostSeat: o.hostSeat ?? 0,
       maxSeats: 4,
-      seats: seats.map((s, i) => (s ? { seat: i, name: s.name, connected: s.connected ?? true, cardsLeft: phase === "lobby" ? null : (s.cardsLeft ?? 7), isYou: i === you } : null)),
+      seats: seats.map((s, i) => (s ? { seat: i, name: s.name, connected: s.connected ?? true, cardsLeft: phase === "lobby" ? null : (s.cardsLeft ?? 7), isYou: i === you, registered: s.registered ?? false } : null)),
     },
     you: { seat: you },
     game:

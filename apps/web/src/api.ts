@@ -14,6 +14,23 @@ export interface AccountInfo {
   groups: { groupId: string; ts: number }[];
 }
 
+export interface WalletInfo {
+  trofi: number;
+  bintang: number;
+  koin: number;
+  kelas: string;
+  kelasIndex: number;
+  next: { name: string; min: number } | null;
+}
+
+export interface LeaderRow {
+  rank: number;
+  name: string;
+  kelas: string;
+  trofi: number;
+  isYou: boolean;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string };
 
 type FetchLike = (input: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ status: number; json(): Promise<unknown> }>;
@@ -40,16 +57,19 @@ export class Api {
     }
   }
 
-  register(b: { username: string; password: string; name?: string; token: string }): Promise<ApiResult<{ session: string; account: AccountInfo }>> {
+  register(b: { username: string; password: string; name?: string; token: string }): Promise<ApiResult<{ session: string; account: AccountInfo; wallet: WalletInfo | null }>> {
     return this.call("POST", "/api/register", b);
   }
-  login(b: { username: string; password: string }): Promise<ApiResult<{ session: string; account: AccountInfo }>> {
+  login(b: { username: string; password: string }): Promise<ApiResult<{ session: string; account: AccountInfo; wallet: WalletInfo | null }>> {
     return this.call("POST", "/api/login", b);
+  }
+  leaderboard(): Promise<ApiResult<{ rows: LeaderRow[]; you: { rank: number | null; trofi: number; kelas: string } }>> {
+    return this.call("GET", "/api/leaderboard");
   }
   logout(): Promise<ApiResult<{ ok: true }>> {
     return this.call("POST", "/api/logout", {});
   }
-  me(): Promise<ApiResult<{ account: AccountInfo }>> {
+  me(): Promise<ApiResult<{ account: AccountInfo; wallet: WalletInfo | null }>> {
     return this.call("GET", "/api/me");
   }
   updateProfile(b: { name?: string; prefs?: Prefs }): Promise<ApiResult<{ account: AccountInfo }>> {

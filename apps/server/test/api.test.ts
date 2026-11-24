@@ -152,3 +152,48 @@ describe("API akun", () => {
     expect(((await me.json()) as { account: { username: string } }).account.username).toBe("andi");
   });
 });
+
+describe("dompet dan papan peringkat", () => {
+  async function two(over: Parameters<typeof testConfig>[0] = {}) {
+    const ctx = await boot(over);
+    const a = (await ctx.call("POST", "/api/register", reg("andi", { name: "Andi", token: tok(1) }))).json;
+    const b = (await ctx.call("POST", "/api/register", reg("budi", { name: "Budi", token: tok(2) }))).json;
+    return { ...ctx, a: a.session as string, b: b.session as string };
+  }
+
+  it("register, login, dan /api/me menyertakan dompet (awal: 0 Trofi, kelas Pemula)", async () => {
+    const { call, a } = await two();
+    const me = await call("GET", "/api/me", undefined, a);
+    expect(me.json.wallet).toEqual({ trofi: 0, bintang: 0, koin: 0, kelas: "Pemula", kelasIndex: 0, next: { name: "Jago", min: 100 } });
+    const login = await call("POST", "/api/login", { username: "andi", password: "rahasia123" });
+    expect((login.json.wallet as { kelas: string }).kelas).toBe("Pemula");
+  });
+
+  it("papan peringkat: butuh sesi, urut Trofi, menandai pemilik sesi, dan tidak membocorkan nama pengguna", async () => {
+    const { call, server, a, b } = await two();
+    expect((await call("GET", "/api/leaderboard")).status).toBe(401);
+    const accounts = server.accounts;
+    const idA = accounts.idOfSession(a) as string;
+    const idB = accounts.idOfSession(b) as string;
+    server.ledger.post([
+      { accountId: idA, currency: "trofi", delta: 120, reason: "ranked", ref: "t1" },
+      { accountId: idB, currency: "trofi", delta: 340, reason: "ranked", ref: "t2" },
+    ]);
+    const r = await call("GET", "/api/leaderboard", undefined, a);
+    expect(r.status).toBe(200);
+    expect(r.json.rows).toEqual([
+      { rank: 1, name: "Budi", kelas: "Pro", trofi: 340, isYou: false },
+      { rank: 2, name: "Andi", kelas: "Jago", trofi: 120, isYou: true },
+    ]);
+    expect(r.json.you).toEqual({ rank: 2, trofi: 120, kelas: "Jago" });
+    expect(r.text).not.toContain("budi\"");
+    expect(r.text).not.toContain(tok(2));
+  });
+
+  it("pemain tanpa Trofi tidak masuk papan; peringkat pemilik sesi null", async () => {
+    const { call, a } = await two();
+    const r = await call("GET", "/api/leaderboard", undefined, a);
+    expect(r.json.rows).toEqual([]);
+    expect(r.json.you).toMatchObject({ rank: null, trofi: 0 });
+  });
+});
