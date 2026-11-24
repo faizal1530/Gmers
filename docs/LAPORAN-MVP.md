@@ -95,7 +95,7 @@ Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain
 
 **Status: tayang.** URL publik: https://gmers-production.up.railway.app (domain bawaan Railway). Proyek `gmers`, satu layanan `gmers`, satu Volume di `/data`, satu replika di region Southeast Asia.
 
-**Paket Railway:** tidak bisa dideteksi lewat CLI. Periksa di dasbor (Settings > Usage/Plan). Bila bukan paket yang selalu menyala, **uji kelompok harus menunggu Anda pindah paket**: paket Free menidurkan layanan dan memutus WebSocket; akun Trial menghapus volume 30 hari setelah kredit habis.
+**Paket Railway:** Pro Workspace (dicek di dasbor Settings > Billing, 24 Nov 2026). Paket berbayar, layanan selalu menyala, jadi WebSocket tidak terputus karena tidur dan Volume tidak terkena aturan hapus akun Trial. Termasuk pemakaian gratis $20 per bulan, selebihnya ditagih di akhir siklus; tagihan itu untuk seluruh workspace, bukan hanya Gmers.
 
 **Hasil uji asap (dari luar, lewat internet):**
 - `GET /healthz`: lulus (200 `ok`).
@@ -114,7 +114,7 @@ Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain
 4. Build Dockerfile diuji sungguhan oleh Railway (bukan lokal; Mac ini tidak punya Docker).
 
 **Perlu tindakan Faizal:**
-1. Cek paket Railway; naik ke paket yang selalu menyala sebelum uji kelompok.
+1. ~~Cek paket Railway~~ Selesai: Pro Workspace, tidak perlu naik paket.
 2. Baca `ADMIN_TOKEN` dari dasbor Railway > gmers > Variables, simpan di pengelola kata sandi.
 3. Coba di HP Android asli (tautan dari WhatsApp, pindah WiFi ke data seluler).
 4. Uji dua kelompok percobaan, lalu jalankan `pnpm hitung`.
