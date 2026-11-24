@@ -10,6 +10,7 @@ export interface ProfileOptions {
   soundOn: boolean;
   onSound: (on: boolean) => void;
   onSaveName: (name: string) => void;
+  onClearChats: () => void;
   onTheme: (mode: ThemeMode) => void;
   onPrivacy: () => void;
 }
@@ -64,6 +65,7 @@ export function profileView(o: ProfileOptions): HTMLElement {
       h("h2", {}, p.themeTitle),
       h("div", { class: "seg", role: "radiogroup", "aria-label": p.themeTitle }, themes.map(([m, label]) => h("button", { type: "button", role: "radio", class: `seg-btn${o.theme === m ? " on" : ""}`, "aria-checked": String(o.theme === m), "data-theme-mode": m, onclick: () => o.onTheme(m) }, label))),
     ),
+    h("div", { class: "panel" }, h("h2", {}, p.dataTitle), h("p", { class: "hint" }, id.chat.deviceNote), h("button", { class: "btn", type: "button", "data-testid": "clear-chats", onclick: o.onClearChats }, p.clearChats)),
     h("div", { class: "panel" }, h("h2", {}, p.aboutTitle), h("p", { class: "hint" }, p.about), h("button", { class: "btn", type: "button", onclick: o.onPrivacy }, p.privacy)),
   );
 }

@@ -163,3 +163,23 @@ Server 69 (+3 uji nudge dan protokol), klien 71 (+28: tab, tempel tautan, profil
 3. **Suara bawaan hidup.** Peramban tetap menahan bunyi sampai ada sentuhan pertama. Mengubah bawaan: `SoundPlayer` di `src/sound.ts` (`kv.get(KEY) !== "off"`).
 4. **Sundulan tidak dicatat di CSV** agar kolom dan penghitung metrik tidak berubah; menambahkannya cukup satu `emit` di `service.ts`.
 5. **Nama di Profil hanya berlaku untuk room berikutnya** (nama kursi di room yang sedang berjalan tidak diubah, karena nama disimpan server per sesi).
+
+## Chat ala WhatsApp mengikuti mockup (24 Nov 2026)
+
+Permintaan Faizal: tab Chat seperti WhatsApp. Chat biasa, grup, dan room; room berdua tampil seperti chat biasa, room lebih dari dua orang seperti grup. Tampilan mengikuti `design/gmers-prototipe-v14.html` (daftar chat, header percakapan, gelembung, bilah ketik).
+
+### Dibangun
+- **Daftar chat:** judul "Chat" besar, pil status koneksi, avatar saya (ke Profil), baris penuh lebar dengan garis pemisah (avatar 56 px, judul tebal, chip "Aktif" bila room sedang berjalan, pratinjau pesan, jam atau "Kemarin" atau nama hari atau tanggal, lencana merah belum dibaca), tombol mengambang "+" (buat room baru), lencana di ikon tab. Urutan tab mengikuti mockup: Chat, Games, Room, Profil.
+- **Room berdua = chat biasa:** judul nama teman, avatar huruf berwarna, titik hijau bila terhubung, subtitle Online/Terputus. **Room lebih dari dua orang = grup:** judul "Room KODE", avatar ungu berikon orang, subtitle "Grup · Kamu, Budi, Citra", nama pengirim berwarna di gelembung masuk.
+- **Percakapan:** tombol kembali, gelembung putih (masuk) dan hijau (keluar) dengan jam di dalamnya, pemisah hari (Hari ini, Kemarin, tanggal), pil sistem (Room dibuat oleh X. Terhapus otomatis jika 24 jam tidak dipakai; X bergabung; X keluar; Game dimulai), bilah ketik dengan tombol dadu (ke meja), emoji, kolom pesan, dan tombol kirim. Ketikan tidak hilang saat pesan baru masuk.
+- **Riwayat tersimpan hanya di perangkat** (`localStorage`, `gmers.chats.v1`): server tetap tidak menyimpan isi chat. Maksimal 30 percakapan dan 200 pesan per percakapan. Percakapan lama tetap muncul setelah muat ulang atau besok; membukanya menampilkan riwayat hanya-baca dengan tombol "Masuk lagi ke room" (kode kelompok tetap hidup, sesi baru dibuat). Profil punya tombol "Hapus riwayat chat". Teks privasi (DRAF) diperbarui.
+
+### Uji
+Klien 85 uji (+14 uji chat dan penyimpanan: jenis chat berdua/grup, lencana, pratinjau, bubble, pesan sistem, XSS, batas laju, emoji, ketikan bertahan, riwayat setelah muat ulang dan masuk lagi, hapus riwayat, label waktu). E2E Chromium: daftar chat dengan lencana belum dibaca, room 4 pemain tampil sebagai grup, percakapan tanpa overflow di 360 px. `pnpm verify` hijau.
+
+### Keputusan otomatis (tambahan)
+1. **"Chat biasa" di luar room tidak ada**: tanpa akun dan teman, satu-satunya cara bertukar pesan adalah lewat room. Chat biasa antar teman (di luar room) baru bisa setelah ada akun dan daftar teman (di luar MVP).
+2. **Jenis dihitung dari jumlah anggota terakhir yang tercatat**: bila room berdua kemudian dimasuki orang ketiga, percakapan yang sama berubah tampil sebagai grup.
+3. **Panggilan suara/video dan "Siap main" di mockup tidak dibangun** (di luar cakupan). Tombol dadu oranye dipakai untuk pindah ke meja.
+4. **Riwayat chat hanya di satu perangkat/peramban**: berganti HP atau menghapus data peramban menghilangkan riwayat. Ini konsekuensi dari keputusan tidak menyimpan chat di server.
+5. **Header aplikasi (Gmers + kode room) disembunyikan di tab Chat** karena tab itu punya judul sendiri seperti mockup.

@@ -7,7 +7,8 @@ import { GameClient, type ConnStatus, type SocketLike } from "./net";
 import { SoundPlayer, haptic, type SoundLike } from "./sound";
 import { Identity, createKV, type KV } from "./storage";
 import { applyTheme, readTheme, type ThemeMode } from "./theme";
-import { ChatPanel } from "./views/chat";
+import { ChatStore, type StoredMsg } from "./chatstore";
+import { ChatHub } from "./views/chathub";
 import { gamesView } from "./views/games";
 import { lobbyView } from "./views/lobby";
 import { errorView, notFoundView, privacyView } from "./views/misc";
@@ -78,7 +79,8 @@ export function describeLastMove(prev: StateMessage | null, next: StateMessage):
 export class App {
   private readonly kv: KV;
   private readonly identity: Identity;
-  private readonly chat: ChatPanel;
+  private readonly store: ChatStore;
+  private readonly hub: ChatHub;
   private readonly sound: SoundLike;
   private client: GameClient | null = null;
   private route: Route = { kind: "home" };
@@ -118,10 +120,19 @@ export class App {
     this.copy = deps.copy ?? defaultCopy;
     this.origin = deps.origin ?? window.location.origin;
     this.wsUrl = deps.wsUrl ?? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
-    this.chat = new ChatPanel(
-      (text) => this.sendMsg({ type: "chat", text }),
-      () => this.renderNav(),
-    );
+    this.store = new ChatStore(this.kv);
+    this.hub = new ChatHub({
+      store: this.store,
+      send: (text) => this.sendMsg({ type: "chat", text }),
+      live: () => this.room,
+      connected: () => this.status === "open",
+      myName: () => this.identity.name() ?? "",
+      rejoin: (groupId) => this.openGroup(groupId),
+      toRoom: () => this.selectTab("room"),
+      toGames: () => this.selectTab("games"),
+      toProfile: () => this.selectTab("profile"),
+      onUnread: () => this.renderNav(),
+    });
     this.header = h("header", { class: "top" });
     this.banner = h("div", { class: "banner", role: "status", "aria-live": "polite", hidden: true, "data-testid": "banner" });
     this.main = h("main", { class: "main", id: "utama", tabindex: "-1" });
@@ -169,6 +180,7 @@ export class App {
       onMessage: (m) => this.onMessage(m),
       onStatus: (s) => {
         this.status = s;
+        this.hub.refresh();
         this.render(false);
       },
     });
@@ -210,7 +222,7 @@ export class App {
         return;
       case "chat": {
         const mine = this.room ? m.seat === this.room.you.seat : false;
-        this.chat.add({ seat: m.seat, name: m.name, text: m.text, mine });
+        this.storeMsg({ kind: "msg", seat: m.seat, name: m.name, text: m.text, ts: m.ts, mine });
         if (!mine) this.sound.play("chat");
         return;
       }
@@ -228,7 +240,7 @@ export class App {
       case "left":
         this.room = null;
         this.lastMove = null;
-        this.chat.reset();
+        this.hub.refresh();
         this.info = null;
         if (this.route.kind === "link") this.intent = { kind: "open", groupId: this.route.groupId };
         this.flush();
@@ -253,8 +265,8 @@ export class App {
     this.intent = { kind: "join", groupId: m.room.groupId, name: this.identity.name() ?? m.room.seats[m.you.seat]?.name ?? "Pemain" };
     if (window.location.pathname !== `/g/${m.room.groupId}`) window.history.replaceState(null, "", `/g/${m.room.groupId}`);
     this.route = { kind: "link", groupId: m.room.groupId };
-    this.chat.setHeader(m.room.groupId, m.room.seats.filter(Boolean).length);
     if (joinedNow) this.tab = "room";
+    this.recordConversation(prev, m);
 
     // Suara dan catatan langkah dari selisih state.
     const move = describeLastMove(prev, m);
@@ -263,6 +275,7 @@ export class App {
     if (newGame) {
       this.lastMove = null;
       this.sound.play("start");
+      this.addSys(m, id.chat.sysStart);
     } else if (move) {
       this.lastMove = {
         side: move.kind === "pass" ? null : (move.side ?? null),
@@ -278,12 +291,46 @@ export class App {
     }
     if (prev && prev.room.phase !== "finished" && phaseNow === "finished" && m.game?.result) {
       const won = m.game.result.winner === m.you.seat;
+      this.addSys(m, id.chat.sysFinish(m.room.seats[m.game.result.winner]?.name ?? ""));
       setTimeout(() => this.sound.play(won ? "win" : "lose"), 350);
     }
     if (m.game && (!prev?.game || prev.game.moveCount !== m.game.moveCount || prev.room.gameNo !== m.room.gameNo) && m.game.turnDeadline !== null) {
       this.turnTotalMs = Math.max(1000, m.game.turnDeadline - m.now);
     }
+    this.hub.refresh();
     this.render(false);
+  }
+
+  /** Simpan percakapan di perangkat: anggota terbaru, pesan sistem (bergabung, keluar). */
+  private recordConversation(prev: StateMessage | null, m: StateMessage): void {
+    const gid = m.room.groupId;
+    const members = m.room.seats.flatMap((s, i) => (s ? [{ seat: i, name: s.name }] : []));
+    const existed = !!this.store.get(gid);
+    this.store.ensure(gid, m.you.seat, members);
+    if (!existed) this.addSys(m, id.chat.roomCreated(m.room.seats[m.room.hostSeat]?.name ?? ""));
+    if (prev && prev.room.id === m.room.id) {
+      m.room.seats.forEach((after, i) => {
+        const before = prev.room.seats[i];
+        if (!before && after && !after.isYou) this.addSys(m, id.chat.sysJoined(after.name));
+        if (before && !after) this.addSys(m, id.chat.sysLeft(before.name));
+      });
+    }
+  }
+
+  private addSys(m: StateMessage, text: string): void {
+    this.store.add(m.room.groupId, { kind: "sys", seat: -1, name: "", text, ts: m.now, mine: false }, false);
+  }
+
+  private storeMsg(msg: StoredMsg): void {
+    const room = this.room;
+    if (!room) return;
+    const gid = room.room.groupId;
+    this.store.ensure(gid, room.you.seat, room.room.seats.flatMap((s, i) => (s ? [{ seat: i, name: s.name }] : [])));
+    const viewing = this.hub.isViewing(gid);
+    this.store.add(gid, msg, !viewing);
+    if (viewing) this.store.markRead(gid);
+    this.hub.refresh();
+    this.renderNav();
   }
 
   private onError(code: string, message: string): void {
@@ -381,9 +428,9 @@ export class App {
       window.history.pushState(null, "", this.room ? `/g/${this.room.room.groupId}` : "/");
     }
     this.tab = t;
-    this.chat.setActive(t === "chat" && !!this.room);
+    if (t === "chat") this.hub.showList();
+    this.hub.setActive(t === "chat");
     this.render(true);
-    if (t === "chat" && this.room) this.chat.focusInput();
   }
 
   private goHome(): void {
@@ -395,7 +442,7 @@ export class App {
     this.linkMissing = false;
     this.replaced = false;
     this.lastMove = null;
-    this.chat.reset();
+    this.hub.showList();
     window.history.pushState(null, "", "/");
     this.route = { kind: "home" };
     this.tab = "games";
@@ -445,6 +492,8 @@ export class App {
 
   private renderHeader(): void {
     clear(this.header);
+    // Tab Chat punya judul sendiri (seperti mockup), jadi header aplikasi disembunyikan di sana.
+    this.header.hidden = this.tab === "chat" && this.route.kind !== "privacy";
     this.header.append(
       h("a", { class: "brand", href: "/", onclick: (e: Event) => { e.preventDefault(); this.selectTab("games"); } }, id.appName),
     );
@@ -453,7 +502,7 @@ export class App {
 
   private renderNav(): void {
     clear(this.nav);
-    this.nav.append(tabBar(this.tab, this.chat.unreadCount, (t) => this.selectTab(t)));
+    this.nav.append(tabBar(this.tab, this.store.totalUnread(), (t) => this.selectTab(t)));
   }
 
   private renderBanner(): void {
@@ -487,7 +536,7 @@ export class App {
         return this.route.kind === "link" ? `link:${this.busy}:${this.notice ?? ""}:${i ? `${i.phase}/${i.players}/${i.isMember}` : "loading"}` : "roomempty";
       }
       case "chat":
-        return `chat:${this.room?.room.groupId ?? "none"}`;
+        return "chat";
       case "profile":
         return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}`;
     }
@@ -524,15 +573,19 @@ export class App {
         if (this.room) return this.buildRoom(this.room);
         return this.route.kind === "link" ? this.buildLink() : this.buildRoomEmpty();
       case "chat":
-        return this.room
-          ? this.chat.view
-          : h("section", { class: "panel center" }, h("h1", {}, id.chat.noRoomTitle), h("p", {}, id.chat.noRoomBody), h("button", { class: "btn primary", type: "button", onclick: () => this.selectTab("games") }, id.roomTab.toGames));
+        return this.hub.view;
       case "profile":
         return profileView({
           name: this.identity.name() ?? "",
           theme: this.theme,
           soundOn: this.sound.enabled,
           onSaveName: (n) => this.identity.setName(n),
+          onClearChats: () => {
+            this.store.clear();
+            this.hub.showList();
+            this.renderNav();
+            this.showToast(id.profile.clearedChats);
+          },
           onTheme: (mode) => {
             this.theme = mode;
             applyTheme(mode, this.kv);

@@ -189,17 +189,25 @@ async function main(): Promise<void> {
 
     // 4. Chat (tab) dan sundulan
     await B.click('[data-testid="tab-chat"]');
+    await shot(B, "05a-daftar-chat");
+    await B.click('[data-testid="convo"]');
     await B.fill('[data-testid="chat-input"]', "halo <b>semua</b>");
     await B.click('[data-testid="chat-send"]');
     await A.waitForSelector('[data-testid="chat-badge"]');
     check((await A.textContent('[data-testid="chat-badge"]'))?.trim() === "1", "penanda pesan belum dibaca muncul di tab Chat");
     await A.click('[data-testid="tab-chat"]');
+    check((await A.textContent('[data-testid="convo-unread"]'))?.trim() === "1", "baris percakapan menampilkan 1 pesan belum dibaca");
+    check(((await A.getAttribute('[data-testid="convo"]', "data-kind")) ?? "") === "group", "room 4 pemain tampil sebagai grup");
+    await shot(A, "05b-daftar-chat-unread");
+    await A.click('[data-testid="convo"]');
     const logText = (await A.textContent('[data-testid="chat-log"]')) ?? "";
     check(logText.includes("halo <b>semua</b>"), "isi chat tampil sebagai teks");
     check((await A.locator('[data-testid="chat-log"] b').count()) === 0, "tidak ada elemen HTML dari chat");
     await noHorizontalOverflow(A, "tab chat");
     await shot(A, "05-chat");
+    await A.click('[data-testid="chat-back"]');
     await A.click('[data-testid="tab-room"]');
+    await B.click('[data-testid="chat-back"]');
     await B.click('[data-testid="tab-room"]');
 
     const turnTexts = await Promise.all(pages.map((p) => p.textContent('[data-testid="turn-text"]')));

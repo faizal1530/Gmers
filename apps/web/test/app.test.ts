@@ -333,50 +333,122 @@ describe("sambung ulang otomatis", () => {
   });
 });
 
-describe("chat sebagai tab", () => {
-  function inRoom() {
-    const h = mount("/g/KODE23", memoryKV({ "gmers.name": "Andi" }));
+describe("chat ala WhatsApp", () => {
+  const two = [{ name: "Andi" }, { name: "Budi" }, null, null] as Parameters<typeof mkState>[0]["seats"];
+  const three = [{ name: "Andi" }, { name: "Budi" }, { name: "Citra" }, null] as Parameters<typeof mkState>[0]["seats"];
+
+  function inRoom(seats = two, kv = memoryKV({ "gmers.name": "Andi" })) {
+    const h = mount("/g/KODE23", kv);
     h.sock().open();
-    h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23" }));
+    h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23", seats }));
     return h;
   }
-  const openChat = (h: ReturnType<typeof inRoom>): void => q<HTMLButtonElement>(h.root, '[data-testid="tab-chat"]').click();
+  const tab = (h: ReturnType<typeof inRoom>, name: "chat" | "games" | "room" | "profile"): void => q<HTMLButtonElement>(h.root, `[data-testid="tab-${name}"]`).click();
+  const openConvo = (h: ReturnType<typeof inRoom>): void => {
+    tab(h, "chat");
+    q<HTMLButtonElement>(h.root, '[data-testid="convo"]').click();
+  };
+  const say = (h: ReturnType<typeof inRoom>, name: string, seat: number, msg: string): void =>
+    h.sock().receive({ type: "chat", seat, name, text: msg, ts: Date.now() });
   const send = (h: ReturnType<typeof inRoom>, t: string): void => {
     q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value = t;
-    q<HTMLFormElement>(h.root, ".chat-form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    q<HTMLFormElement>(h.root, ".composer").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
   };
 
-  it("pesan masuk saat di tab lain menambah penanda pada tab Chat; membuka tab menghapusnya", () => {
-    const h = inRoom();
+  it("tanpa percakapan: daftar kosong yang menjelaskan; tombol + membawa ke Games untuk membuat room", () => {
+    const h = mount("/");
+    tab(h, "chat");
+    expect(text(h.root)).toContain(id.chat.listEmptyTitle);
+    expect(h.root.querySelectorAll('[data-testid="convo"]')).toHaveLength(0);
+    q<HTMLButtonElement>(h.root, '[data-testid="fab"]').click();
+    expect(q(h.root, '[data-testid="tab-games"]').getAttribute("aria-current")).toBe("page");
+  });
+
+  it("room berdua tampil seperti chat biasa (nama teman, avatar huruf); lebih dari dua orang seperti grup", () => {
+    const direct = inRoom(two);
+    tab(direct, "chat");
+    const row = q(direct.root, '[data-testid="convo"]');
+    expect(row.getAttribute("data-kind")).toBe("direct");
+    expect(text(q(row, ".cv-title b"))).toBe("Budi");
+    expect(row.querySelector(".av")).not.toBeNull();
+    expect(row.querySelector(".gav")).toBeNull();
+    expect(text(q(row, ".chip.live"))).toBe(id.chat.liveTag);
+
+    const group = inRoom(three);
+    tab(group, "chat");
+    const grow = q(group.root, '[data-testid="convo"]');
+    expect(grow.getAttribute("data-kind")).toBe("group");
+    expect(text(q(grow, ".cv-title b"))).toBe(id.chat.roomLabel("KODE23"));
+    expect(grow.querySelector(".gav")).not.toBeNull();
+  });
+
+  it("pesan masuk di tab lain: lencana di tab dan di baris, pratinjau; membuka percakapan menghapusnya", () => {
+    const h = inRoom(three);
+    say(h, "Budi", 1, "halo semua");
+    say(h, "Citra", 2, "ayo mulai");
+    expect(text(q(h.root, '[data-testid="chat-badge"]'))).toBe("2");
+    tab(h, "chat");
+    const row = q(h.root, '[data-testid="convo"]');
+    expect(text(q(row, '[data-testid="convo-unread"]'))).toBe("2");
+    expect(text(q(row, ".cv-prev"))).toBe("Citra: ayo mulai"); // grup: nama pengirim di pratinjau
+    row.click();
     expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
-    h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "halo", ts: 1 });
-    h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "ayo mulai", ts: 2 });
-    const badge = q(h.root, '[data-testid="chat-badge"]');
-    expect(text(badge)).toBe("2");
-    expect(q(h.root, '[data-testid="tab-chat"]').getAttribute("aria-label")).toContain(id.chat.tabUnread(2));
-    openChat(h);
+    say(h, "Budi", 1, "lagi"); // saat percakapan terbuka tidak menambah penanda
     expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
-    expect(text(q(h.root, '[data-testid="chat-log"]'))).toContain("halo");
-    expect(text(q(h.root, ".chat-head"))).toContain(id.chat.groupTitle("KODE23"));
-    // pesan masuk saat tab Chat terbuka tidak menambah penanda
-    h.sock().receive({ type: "chat", seat: 1, name: "Budi", text: "lagi", ts: 3 });
-    expect(h.root.querySelector('[data-testid="chat-badge"]')).toBeNull();
+    q<HTMLButtonElement>(h.root, '[data-testid="chat-back"]').click();
+    expect(h.root.querySelector('[data-testid="convo-unread"]')).toBeNull();
+  });
+
+  it("pratinjau chat berdua tanpa nama pengirim; pesan sendiri berawalan 'Kamu:'", () => {
+    const h = inRoom(two);
+    say(h, "Budi", 1, "malam ini main?");
+    tab(h, "chat");
+    expect(text(q(h.root, ".cv-prev"))).toBe("malam ini main?");
+    q<HTMLButtonElement>(h.root, '[data-testid="convo"]').click();
+    say(h, "Andi", 0, "jadi");
+    q<HTMLButtonElement>(h.root, '[data-testid="chat-back"]').click();
+    expect(text(q(h.root, ".cv-prev"))).toBe(`${id.chat.youPrefix}jadi`);
+  });
+
+  it("percakapan: header (kembali, nama, status), gelembung masuk dan keluar dengan jam, pil sistem, pemisah hari", () => {
+    const h = inRoom(two);
+    say(h, "Budi", 1, "malam ini jadi?");
+    say(h, "Andi", 0, "jadi");
+    openConvo(h);
+    expect(text(q(h.root, ".th-title b"))).toBe("Budi");
+    expect(text(q(h.root, '[data-testid="chat-sub"]'))).toBe(id.chat.online);
+    expect(h.root.querySelector(".th-back")).not.toBeNull();
+    const log = q(h.root, '[data-testid="chat-log"]');
+    expect(text(q(log, ".sys"))).toBe(id.chat.roomCreated("Andi"));
+    expect(text(q(log, ".daysep"))).toBe(id.chat.today);
+    const bubbles = [...log.querySelectorAll(".bub")];
+    expect(bubbles.map((b) => b.classList.contains("mine"))).toEqual([false, true]);
+    expect(q(bubbles[0] as HTMLElement, ".bub-time").textContent).toMatch(/^\d\d\.\d\d$/);
+    expect(bubbles[0]!.querySelector(".bub-name")).toBeNull(); // chat berdua: tanpa nama pengirim
+  });
+
+  it("grup: nama pengirim tampil di gelembung masuk; subtitle menyebut anggota", () => {
+    const h = inRoom(three);
+    say(h, "Citra", 2, "siap");
+    openConvo(h);
+    expect(text(q(h.root, ".bub-name"))).toBe("Citra");
+    expect(text(q(h.root, '[data-testid="chat-sub"]'))).toBe(`${id.chat.kindGroup} · ${id.chat.me}, Budi, Citra`);
   });
 
   it("HTML dalam pesan ditampilkan sebagai teks dan tidak pernah dieksekusi", () => {
-    const h = inRoom();
-    openChat(h);
+    const h = inRoom(three);
+    openConvo(h);
     const evil = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>';
-    h.sock().receive({ type: "chat", seat: 1, name: "<b>Budi</b>", text: evil, ts: 1 });
+    say(h, "<b>Budi</b>", 1, evil);
     const log = q(h.root, '[data-testid="chat-log"]');
     expect(log.querySelector("img, script, b")).toBeNull();
     expect(log.textContent).toContain(evil);
     expect((window as unknown as { __xss?: number }).__xss).toBeUndefined();
   });
 
-  it("mengirim pesan yang sudah dibersihkan; pesan kosong tidak dikirim; laju dibatasi 5 per 10 detik", () => {
-    const h = inRoom();
-    openChat(h);
+  it("mengirim pesan yang sudah dibersihkan; kosong tidak dikirim; laju dibatasi; emoji disisipkan", () => {
+    const h = inRoom(two);
+    openConvo(h);
     send(h, "   ");
     expect(h.sock().sent.some((m) => m.type === "chat")).toBe(false);
     send(h, "  halo\u0000   semua ");
@@ -386,13 +458,67 @@ describe("chat sebagai tab", () => {
     expect(h.sock().sent.filter((m) => m.type === "chat")).toHaveLength(5);
     send(h, "keenam");
     expect(h.sock().sent.filter((m) => m.type === "chat")).toHaveLength(5);
-    expect(text(q(h.root, ".chat-view .hint"))).toBe(id.chat.tooFast);
+    expect(text(q(h.root, ".th-foot .hint"))).toBe(id.chat.tooFast);
+
+    const tray = q(h.root, ".emoji-tray");
+    expect(tray.hasAttribute("hidden")).toBe(true);
+    q<HTMLButtonElement>(h.root, '[data-testid="emoji-toggle"]').click();
+    expect(tray.hasAttribute("hidden")).toBe(false);
+    q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value = ""; // "keenam" tertahan oleh pembatas laju
+    q<HTMLButtonElement>(tray, ".emoji").click();
+    expect(q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value).toBe(id.chat.emojis[0]);
   });
 
-  it("tanpa room: tab Chat menjelaskan bahwa chat aktif setelah masuk room", () => {
-    const h = mount("/");
-    q<HTMLButtonElement>(h.root, '[data-testid="tab-chat"]').click();
-    expect(text(h.root)).toContain(id.chat.noRoomTitle);
+  it("ketikan tidak hilang saat pesan baru masuk", () => {
+    const h = inRoom(two);
+    openConvo(h);
+    q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value = "sedang mengetik";
+    say(h, "Budi", 1, "halo");
+    expect(q<HTMLInputElement>(h.root, '[data-testid="chat-input"]').value).toBe("sedang mengetik");
+  });
+
+  it("pesan sistem: bergabung, keluar, game dimulai", () => {
+    const h = inRoom(two);
+    h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23", seats: three }));
+    h.sock().receive(mkState({ phase: "lobby", groupId: "KODE23", seats: [{ name: "Andi" }, { name: "Budi" }, null, null] }));
+    h.sock().receive(mkState({ phase: "playing", groupId: "KODE23", seats: two, turn: 1 }));
+    openConvo(h);
+    const sys = [...h.root.querySelectorAll(".sys")].map((e) => text(e));
+    expect(sys).toEqual([id.chat.roomCreated("Andi"), id.chat.sysJoined("Citra"), id.chat.sysLeft("Citra"), id.chat.sysStart]);
+  });
+
+  it("riwayat tersimpan di perangkat: setelah muat ulang percakapan lama tetap ada, hanya-baca, dengan tombol masuk lagi", () => {
+    const kv = memoryKV({ "gmers.name": "Andi" });
+    const h = inRoom(two, kv);
+    say(h, "Budi", 1, "sampai besok");
+    expect(kv.data.get("gmers.chats.v1")).toContain("sampai besok");
+    h.app.stop();
+
+    const h2 = mount("/", kv); // peramban dibuka lagi, belum masuk room
+    tab(h2, "chat");
+    const row = q(h2.root, '[data-testid="convo"]');
+    expect(text(q(row, ".cv-title b"))).toBe("Budi");
+    expect(text(q(row, ".cv-prev"))).toBe("sampai besok");
+    expect(row.querySelector(".chip.live")).toBeNull();
+    row.click();
+    expect(h2.root.querySelector('[data-testid="chat-input"]')).toBeNull();
+    expect(text(q(h2.root, ".th-off"))).toContain(id.chat.notLive);
+    q<HTMLButtonElement>(h2.root, '[data-testid="rejoin"]').click();
+    expect(window.location.pathname).toBe("/g/KODE23");
+    h2.sock().open();
+    expect(h2.sock().sent[0]).toMatchObject({ type: "open_link", groupId: "KODE23" });
+  });
+
+  it("tombol dadu di percakapan membuka meja; Profil dapat menghapus riwayat chat", () => {
+    const h = inRoom(two);
+    say(h, "Budi", 1, "halo");
+    openConvo(h);
+    q<HTMLButtonElement>(h.root, '[data-testid="to-table"]').click();
+    expect(q(h.root, '[data-testid="tab-room"]').getAttribute("aria-current")).toBe("page");
+    tab(h, "profile");
+    q<HTMLButtonElement>(h.root, '[data-testid="clear-chats"]').click();
+    tab(h, "chat");
+    expect(h.root.querySelectorAll('[data-testid="convo"]')).toHaveLength(0);
   });
 });
 
@@ -400,7 +526,7 @@ describe("tab navigasi", () => {
   it("empat tab (Games, Room, Chat, Profil); Games aktif di beranda dan menandai halaman aktif", () => {
     const h = mount("/");
     const tabs = [...h.root.querySelectorAll(".tabs .tab")].map((t) => text(t));
-    expect(tabs).toEqual([id.tabs.games, id.tabs.room, id.tabs.chat, id.tabs.profile]);
+    expect(tabs).toEqual([id.tabs.chat, id.tabs.games, id.tabs.room, id.tabs.profile]);
     expect(q(h.root, '[data-testid="tab-games"]').getAttribute("aria-current")).toBe("page");
     expect(q(h.root, '[data-testid="tab-room"]').hasAttribute("aria-current")).toBe(false);
     expect(h.root.querySelector("nav")!.getAttribute("aria-label")).toBe(id.tabs.label);
@@ -465,7 +591,7 @@ describe("tab navigasi", () => {
     q<HTMLButtonElement>(h.root, '[data-sound="on"]').click();
     expect(h.sound.enabled).toBe(true);
 
-    q<HTMLButtonElement>(h.root, ".panel button.btn:not(.primary)").click();
+    [...h.root.querySelectorAll<HTMLButtonElement>("button.btn")].find((b) => text(b) === id.profile.privacy)!.click();
     expect(text(h.root)).toContain(id.privacy.title);
     expect(window.location.pathname).toBe("/privasi");
   });

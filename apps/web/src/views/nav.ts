@@ -3,7 +3,7 @@ import { h } from "../dom";
 import { icon } from "./icons";
 
 export type Tab = "games" | "room" | "chat" | "profile";
-const ORDER: Tab[] = ["games", "room", "chat", "profile"];
+const ORDER: Tab[] = ["chat", "games", "room", "profile"];
 
 export function tabBar(active: Tab, chatUnread: number, onSelect: (t: Tab) => void): HTMLElement {
   return h(
