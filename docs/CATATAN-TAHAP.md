@@ -270,3 +270,5 @@ Server 167 (+31), klien 149 (+15 di `test/social.test.ts`), E2E Chromium: dua ak
 3. **Ajakan "Nanti" tidak membuat pengingat asinkron**; hanya jawaban dicatat dan ditampilkan ke pengirim.
 4. **Ajak main butuh room di ruang tunggu**; tanpa itu klien menampilkan peringatan.
 5. **Laporan hanya dicatat untuk ditinjau admin**; tidak ada penindakan otomatis (keputusan moderasi milik pemilik).
+
+**Keputusan pemilik (24 Nov 2026):** DM untuk teman offline tetap hanya ditahan di memori server (maks 24 jam, 50 pesan), tidak ditulis ke disk. Halaman privasi (draf) perlu menyebut ini sebelum rilis publik.
