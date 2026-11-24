@@ -438,6 +438,57 @@ async function main(): Promise<void> {
     check(((await F.getAttribute('[data-testid="convo"]', "data-group")) ?? "") === eCode, "masuk dari perangkat lain: room akun tampil di daftar chat");
     await shot(F, "11-chat-perangkat-lain");
 
+    // 6b. Pertemanan: dua akun saling ikuti, bertukar pesan 1-1, dan ajakan main
+    const G = await extra();
+    await G.goto(base);
+    await G.fill("#nama", "Gita");
+    await G.click("button[type=submit]");
+    await G.waitForSelector('[data-testid="share-url"]');
+    await G.click('[data-testid="tab-profile"]');
+    await G.fill("#akun-user", "gita_e2e");
+    await G.fill("#akun-pass", "rahasia-e2e-456");
+    await G.click('[data-testid="account-submit"]');
+    await G.waitForSelector('[data-testid="account-user"]');
+    const befriend = async (p: Page, target: string): Promise<void> => {
+      await p.click('[data-testid="tab-chat"]');
+      await p.click('[data-testid="open-friends"]');
+      await p.fill('[data-testid="friend-search"]', target);
+      await p.click('[data-testid="friend-search-btn"]');
+      await p.waitForSelector('[data-testid="usercard"], [data-testid="search-error"]', { timeout: 8000 });
+      const err = await p.locator('[data-testid="search-error"]').textContent().catch(() => null);
+      check(!err, `pencarian teman '${target}' berhasil${err ? `: ${err}` : ""}`);
+      await p.click('[data-testid="rel-follow"]');
+      await p.waitForFunction(() => document.querySelector('[data-testid="rel-follow"]')?.textContent?.includes("Berhenti"));
+    };
+    await befriend(G, "eka_e2e");
+    await befriend(E, "gita_e2e");
+    await E.waitForSelector('[data-testid="friend-tag"]');
+    check((await E.locator('[data-testid="friend-tag"]').count()) === 1, "saling ikuti = teman (tanda Teman muncul)");
+    await noHorizontalOverflow(E, "daftar teman");
+    await shot(E, "12-teman");
+    await E.click('[data-testid="friends-back"]');
+    await E.click('[data-testid="open-friends"]');
+    await E.waitForSelector('[data-testid="friend"][data-username="gita_e2e"]');
+    await E.click('[data-testid="friend-chat"]');
+    await E.fill('[data-testid="chat-input"]', "halo gita, main yuk");
+    await E.click('[data-testid="chat-send"]');
+    await G.click('[data-testid="friends-back"]');
+    await G.waitForSelector('[data-testid="convo"][data-group="@eka_e2e"]');
+    check(((await G.textContent('[data-testid="convo"][data-group="@eka_e2e"]')) ?? "").includes("halo gita, main yuk"), "pesan 1-1 sampai ke teman");
+    await G.click('[data-testid="convo"][data-group="@eka_e2e"]');
+    await shot(G, "13-chat-teman");
+    // Eka ada di ruang tunggu room-nya: ajak Gita main
+    await E.click('[data-testid="dm-invite"]');
+    await G.waitForSelector('[data-testid="invite-card"]');
+    check((await G.locator('[data-testid="invite-join"]').count()) === 1, "ajakan main tampil sebagai kartu dengan tombol Gabung");
+    await G.click('[data-testid="invite-join"]');
+    await G.waitForSelector('[data-testid="tab-room"].on', { timeout: 8000 }).catch(() => undefined);
+    await G.waitForSelector("button[type=submit]");
+    if ((await G.inputValue("#nama").catch(() => "")) === "") await G.fill("#nama", "Gita");
+    await G.click("button[type=submit]");
+    await G.waitForSelector('[data-testid="group-code"]');
+    check(((await G.textContent('[data-testid="group-code"]')) ?? "").trim() === eCode, "Gabung pada ajakan memasukkan Gita ke room pengirim");
+
     // 7. Tidak ada galat konsol, tidak ada permintaan ke pihak ketiga
     check(problems.length === 0, `tanpa galat konsol/halaman${problems.length ? `: ${problems.join(" | ")}` : ""}`);
     check(external.length === 0, `tanpa permintaan ke pihak ketiga${external.length ? `: ${external.join(", ")}` : ""}`);

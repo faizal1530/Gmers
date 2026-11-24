@@ -11,3 +11,5 @@ export * from "./ledger";
 export * from "./progress";
 export * from "./matchmaking";
 export * from "./games";
+export * from "./social";
+export * from "./socialhub";

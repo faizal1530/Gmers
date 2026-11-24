@@ -33,6 +33,9 @@ export function makeClientMessageSchema(cfg: Pick<ServerConfig, "nameMinLength" 
     z.object({ type: z.literal("auth"), session: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
     z.object({ type: z.literal("queue_ranked"), game: z.enum(["gaple", "ludo"]) }).strict(),
     z.object({ type: z.literal("cancel_queue") }).strict(),
+    z.object({ type: z.literal("dm_send"), to: z.string().trim().min(1).max(40), text: z.string().trim().min(1).max(cfg.chatMaxLength).regex(noControl) }).strict(),
+    z.object({ type: z.literal("invite_send"), to: z.string().trim().min(1).max(40), game: z.enum(["gaple", "ludo"]) }).strict(),
+    z.object({ type: z.literal("invite_reply"), id: z.string().regex(/^[0-9a-f]{12}$/), reply: z.enum(["join", "later", "busy"]) }).strict(),
     z.object({ type: z.literal("chat"), text: z.string().trim().min(1).max(cfg.chatMaxLength).regex(noControl) }).strict(),
     z.object({ type: z.literal("rematch") }).strict(),
     z.object({ type: z.literal("leave") }).strict(),
@@ -130,6 +133,11 @@ export type ServerMessage =
   | ProtocolError
   | { type: "pong"; now: number }
   | { type: "left" }
+  | { type: "dm"; from: { username: string; name: string }; text: string; ts: number }
+  | { type: "dm_ack"; to: string; ts: number; delivered: boolean }
+  | { type: "invite"; id: string; from: { username: string; name: string }; game: GameId; groupId: string; expiresAt: number; silent: boolean }
+  | { type: "invite_result"; id: string; to: { username: string; name: string }; reply: "sent" | "join" | "later" | "busy" | "auto_busy" | "expired" }
+  | { type: "notice"; id: string; kind: "follow" | "invite" | "streak" | "dm"; text: string; ts: number }
   | { type: "auth_ok"; username: string; name: string }
   | { type: "queue"; state: "waiting" | "idle"; game: GameId | null; since: number | null }
   | { type: "match_found"; groupId: string }

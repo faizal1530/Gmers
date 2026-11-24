@@ -406,3 +406,20 @@ a { color: var(--accent); }
 .rank .grow { flex: 1 1 7rem; min-width: 7rem; overflow-wrap: anywhere; }
 .rank .muted { font-size: 0.85rem; }
 .brow .grow { min-width: 0; overflow-wrap: anywhere; }
+
+/* Fase 3: teman, chat 1-1, ajakan */
+.row-head { display: flex; align-items: center; gap: 12px; }
+.row-head h1 { margin: 0; }
+.flist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.frow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.frow-mid { display: flex; flex-direction: column; flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+.frow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.frow-actions.wrap { margin-top: 8px; }
+.streak { font-size: 0.85rem; font-weight: 700; opacity: 0.6; }
+.streak.done { opacity: 1; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.notice.new { font-weight: 700; }
+.usercard .me { display: flex; align-items: center; gap: 10px; }
+.invite-card { align-self: center; max-width: 92%; background: var(--soft); border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; list-style: none; }
+.invite-card .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.th-notfriend { padding: 12px var(--gutter); text-align: center; }

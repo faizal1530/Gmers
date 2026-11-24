@@ -1,6 +1,6 @@
 import type { Card } from "@gmers/game-engine";
 import type { ClientMessage, ServerMessage, StateMessage } from "@gmers/server/protocol";
-import { Api, type AccountInfo, type LeaderRow, type WalletInfo } from "./api";
+import { Api, type AccountInfo, type FriendsData, type LeaderRow, type NoticeRow, type NotifPrefs, type StatusId, type UserCard, type WalletInfo } from "./api";
 import { clear, h } from "./dom";
 import { id } from "./i18n/id";
 import { cardKey, checkName, isMyTurn, parseRoute, secondsLeft, type Route } from "./logic";
@@ -8,8 +8,9 @@ import { GameClient, type ConnStatus, type SocketLike } from "./net";
 import { SoundPlayer, haptic, type SoundLike } from "./sound";
 import { Identity, createKV, randomToken, type KV } from "./storage";
 import { applyTheme, readTheme, type ThemeMode } from "./theme";
-import { ChatStore, type StoredMsg } from "./chatstore";
+import { ChatStore, type InviteInfo, type StoredMsg } from "./chatstore";
 import { ChatHub } from "./views/chathub";
+import { friendsView } from "./views/friends";
 import { gamesView } from "./views/games";
 import { lobbyView } from "./views/lobby";
 import { ludoView } from "./views/ludo";
@@ -117,6 +118,13 @@ export class App {
   private queueStartedAt = 0;
   private pendingQueue: "gaple" | "ludo" | null = null;
   private board: { rows: LeaderRow[]; you: { rank: number | null } } | null = null;
+  private friends: FriendsData | null = null;
+  private friendsFailed = false;
+  private friendsOpen = false;
+  private friendsVer = 0;
+  private searchDraft = "";
+  private found: { card: UserCard } | { error: string } | null = null;
+  private notices: NoticeRow[] = [];
   private client: GameClient | null = null;
   private route: Route = { kind: "home" };
   private tab: Tab = "games";
@@ -169,6 +177,11 @@ export class App {
       toProfile: () => this.selectTab("profile"),
       isGuest: () => this.account === null,
       onUnread: () => this.renderNav(),
+      sendDm: (u, t) => this.sendDm(u, t),
+      isFriend: (u) => this.friends === null || this.friends.friends.some((f) => f.username === u),
+      onInviteFriend: (u) => this.inviteFriend(u),
+      onInviteReply: (inv, reply) => this.replyInvite(inv, reply),
+      onFriends: () => this.openFriends(),
     });
     this.header = h("header", { class: "top" });
     this.banner = h("div", { class: "banner", role: "status", "aria-live": "polite", hidden: true, "data-testid": "banner" });
@@ -242,7 +255,163 @@ export class App {
     for (const g of acc.groups) this.store.ensureStub(g.groupId, g.ts);
     this.hub.refresh();
     this.renderNav();
+    void this.loadFriends();
+    const hadClient = this.client !== null;
+    this.ensureClient(); // tersambung agar pesan teman dan ajakan bisa diterima
+    // Koneksi yang sudah terbuka sebelum masuk akun perlu dikenali ulang.
+    const session = this.identity.session();
+    if (hadClient && this.client?.isOpen && session && /^[0-9a-f]{64}$/.test(session)) this.sendMsg({ type: "auth", session });
     return changed;
+  }
+
+  // ---------- teman ----------
+
+  private async loadFriends(): Promise<void> {
+    if (!this.account) return;
+    const [f, n] = await Promise.all([this.api.friends(), this.api.notices()]);
+    if (f.ok) {
+      this.friends = f.data;
+      this.friendsFailed = false;
+    } else this.friendsFailed = true;
+    if (n.ok) this.notices = n.data.notices;
+    this.friendsVer++;
+    this.hub.refresh();
+    this.render(false);
+  }
+
+  private openFriends(): void {
+    this.friendsOpen = true;
+    this.found = null;
+    this.friendsVer++;
+    void this.loadFriends();
+    this.render(true);
+  }
+
+  private closeFriends(): void {
+    this.friendsOpen = false;
+    this.render(true);
+  }
+
+  private async searchFriend(username: string): Promise<void> {
+    if (username.toLowerCase() === this.account?.username) {
+      this.found = { error: id.friends.yourself };
+    } else {
+      const r = await this.api.user(username);
+      this.found = r.ok ? { card: r.data.user } : { error: r.status === 404 ? id.friends.notFound : r.message };
+    }
+    this.friendsVer++;
+    this.render(true);
+  }
+
+  private async relate(kind: "follow" | "contact" | "block", username: string, on: boolean): Promise<void> {
+    const r = await this.api.relate(kind, username, on);
+    if (!r.ok) {
+      this.showToast(r.message);
+      return;
+    }
+    if (this.found && "card" in this.found && this.found.card.username === username) this.found = { card: { ...this.found.card, relation: r.data.relation } };
+    await this.loadFriends();
+    this.friendsVer++;
+    this.render(true);
+  }
+
+  private async reportUser(username: string, reason: string): Promise<void> {
+    const r = await this.api.report("user", username, reason);
+    this.showToast(r.ok ? id.friends.reportSent : r.message);
+  }
+
+  private async setMyStatus(status: StatusId): Promise<void> {
+    const r = await this.api.setStatus(status);
+    if (r.ok && this.friends) this.friends = { ...this.friends, status };
+    this.friendsVer++;
+    this.render(true);
+  }
+
+  private async setPrefs(p: Partial<NotifPrefs>): Promise<void> {
+    const r = await this.api.setNotifPrefs(p);
+    if (r.ok && this.friends) this.friends = { ...this.friends, prefs: r.data.prefs };
+  }
+
+  private async markNoticesRead(): Promise<void> {
+    await this.api.readNotices();
+    this.notices = this.notices.map((n) => ({ ...n, read: true }));
+    this.friendsVer++;
+    this.render(true);
+  }
+
+  private openDm(username: string, name: string): void {
+    this.store.ensureDm(username, name);
+    this.friendsOpen = false;
+    this.tab = "chat";
+    this.hub.setActive(true);
+    this.hub.openThread(`@${username}`);
+    this.render(true);
+  }
+
+  private sendDm(username: string, text: string): boolean {
+    this.ensureClient();
+    if (!this.sendMsg({ type: "dm_send", to: username, text })) return false;
+    const c = this.store.ensureDm(username, this.store.get(`@${username}`)?.dm?.name ?? username);
+    this.store.add(c.groupId, { kind: "msg", seat: -1, name: "", text, ts: Date.now(), mine: true }, false);
+    this.hub.refresh();
+    return true;
+  }
+
+  private inviteFriend(username: string): void {
+    const r = this.room;
+    if (!r || r.room.phase === "playing") {
+      this.showToast(id.friends.needRoom);
+      return;
+    }
+    this.sendMsg({ type: "invite_send", to: username, game: r.room.gameId });
+  }
+
+  private replyInvite(inv: InviteInfo, reply: "join" | "later" | "busy"): void {
+    this.sendMsg({ type: "invite_reply", id: inv.id, reply });
+    for (const c of this.store.list()) this.store.updateInvite(c.groupId, inv.id, reply);
+    this.hub.refresh();
+    if (reply === "join") this.openGroup(inv.groupId, this.room !== null);
+  }
+
+  private onDm(m: Extract<ServerMessage, { type: "dm" }>): void {
+    const key = `@${m.from.username}`;
+    this.store.ensureDm(m.from.username, m.from.name);
+    const viewing = this.hub.isViewing(key);
+    this.store.add(key, { kind: "msg", seat: -2, name: m.from.name, text: m.text, ts: m.ts, mine: false }, !viewing);
+    if (viewing) this.store.markRead(key);
+    if (!viewing) this.sound.play("chat");
+    this.hub.refresh();
+    this.renderNav();
+  }
+
+  private onInvite(m: Extract<ServerMessage, { type: "invite" }>): void {
+    const key = `@${m.from.username}`;
+    this.store.ensureDm(m.from.username, m.from.name);
+    const viewing = this.hub.isViewing(key);
+    const info: InviteInfo = { id: m.id, game: m.game, groupId: m.groupId, expiresAt: m.expiresAt, dir: "in", state: "pending" };
+    this.store.add(key, { kind: "invite", invite: info, seat: -2, name: m.from.name, text: id.dm.inviteIn(m.from.name, id.games[m.game].name), ts: Date.now(), mine: false }, !viewing);
+    if (viewing) this.store.markRead(key);
+    if (!m.silent) {
+      this.sound.play("nudge");
+      this.showToast(id.dm.inviteIn(m.from.name, id.games[m.game].name));
+    }
+    this.hub.refresh();
+    this.renderNav();
+  }
+
+  private onInviteResult(m: Extract<ServerMessage, { type: "invite_result" }>): void {
+    const key = `@${m.to.username}`;
+    this.store.ensureDm(m.to.username, m.to.name);
+    const game = this.room?.room.gameId ?? "gaple";
+    if (m.reply === "sent" || m.reply === "auto_busy") {
+      const info: InviteInfo = { id: m.id, game, groupId: this.room?.room.groupId ?? "", expiresAt: Date.now() + 15 * 60_000, dir: "out", state: m.reply };
+      this.store.add(key, { kind: "invite", invite: info, seat: -1, name: "", text: id.dm.inviteOut(m.to.name, id.games[game].name), ts: Date.now(), mine: true }, false);
+      if (m.reply === "auto_busy") this.showToast(id.dm.result.auto_busy);
+    } else {
+      this.store.updateInvite(key, m.id, m.reply);
+      this.showToast(`${m.to.name}: ${id.dm.result[m.reply]}`);
+    }
+    this.hub.refresh();
   }
 
   /** Papan peringkat dari server (butuh akun). */
@@ -438,6 +607,22 @@ export class App {
         this.queue = { state: m.state, game: m.game, since: m.since };
         this.render(false);
         return;
+      case "dm":
+        this.onDm(m);
+        return;
+      case "dm_ack":
+        return;
+      case "invite":
+        this.onInvite(m);
+        return;
+      case "invite_result":
+        this.onInviteResult(m);
+        return;
+      case "notice":
+        this.notices = [{ id: m.id, kind: m.kind, text: m.text, ts: m.ts, read: false }, ...this.notices];
+        this.friendsVer++;
+        if (this.friendsOpen) this.render(true);
+        return;
       case "match_found":
         this.queue = { state: "idle", game: null, since: null };
         this.sound.play("start");
@@ -591,7 +776,7 @@ export class App {
   }
 
   /** Buka kelompok dari tautan atau kode yang ditempel. */
-  private openGroup(groupId: string): void {
+  private openGroup(groupId: string, leaveFirst = false): void {
     this.info = null;
     this.notice = null;
     this.linkMissing = false;
@@ -600,6 +785,8 @@ export class App {
     this.tab = "room";
     window.history.pushState(null, "", `/g/${groupId}`);
     this.render(true);
+    // Masih duduk di room lain: keluar dulu; pesan `left` yang melanjutkan membuka tautan.
+    if (leaveFirst && this.sendMsg({ type: "leave" })) return;
     this.flush();
   }
 
@@ -634,7 +821,10 @@ export class App {
     }
     this.tab = t;
     if (t === "games") void this.refreshBoard();
-    if (t === "chat") this.hub.showList();
+    if (t === "chat") {
+      this.friendsOpen = false;
+      this.hub.showList();
+    }
     this.hub.setActive(t === "chat");
     this.render(true);
   }
@@ -744,7 +934,7 @@ export class App {
         return this.route.kind === "link" ? `link:${this.busy}:${this.notice ?? ""}:${i ? `${i.phase}/${i.players}/${i.isMember}` : "loading"}` : "roomempty";
       }
       case "chat":
-        return "chat";
+        return this.friendsOpen ? `friends:${this.friendsVer}` : "chat";
       case "profile":
         return `profile:${this.theme}:${this.sound.enabled}:${this.identity.name() ?? ""}:${this.account?.username ?? ""}:${this.wallet?.trofi ?? ""}:${this.wallet?.bintang ?? ""}`;
     }
@@ -794,6 +984,7 @@ export class App {
         if (this.room) return this.buildRoom(this.room);
         return this.route.kind === "link" ? this.buildLink() : this.buildRoomEmpty();
       case "chat":
+        if (this.friendsOpen) return this.buildFriends();
         return this.hub.view;
       case "profile":
         return profileView({
@@ -834,6 +1025,29 @@ export class App {
           onPrivacy: () => this.openPrivacy(),
         });
     }
+  }
+
+  private buildFriends(): HTMLElement {
+    return friendsView({
+      loggedIn: this.account !== null,
+      data: this.friends,
+      failed: this.friendsFailed,
+      notices: this.notices,
+      found: this.found,
+      draft: this.searchDraft,
+      onDraft: (v) => void (this.searchDraft = v),
+      onBack: () => this.closeFriends(),
+      onSearch: (u) => void this.searchFriend(u),
+      onRelate: (k, u, on) => void this.relate(k, u, on),
+      onReport: (u, r) => void this.reportUser(u, r),
+      onChat: (f) => this.openDm(f.username, f.name),
+      onInvite: (f) => this.inviteFriend(f.username),
+      onStatus: (st) => void this.setMyStatus(st),
+      onPrefs: (p) => void this.setPrefs(p),
+      onMarkRead: () => void this.markNoticesRead(),
+      onRetry: () => void this.loadFriends(),
+      onToProfile: () => this.selectTab("profile"),
+    });
   }
 
   private buildRoomEmpty(): HTMLElement {

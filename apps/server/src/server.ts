@@ -8,6 +8,8 @@ import { AccountService, FileAccountLog, isAuthError, type AccountLog } from "./
 import { realClock } from "./clock";
 import { Ledger, FileLedgerLog, type LedgerLog } from "./ledger";
 import { Progress } from "./progress";
+import { FileSocialLog, Social, type SocialLog, type Status } from "./social";
+import { SocialHub } from "./socialhub";
 import type { ServerConfig } from "./config";
 import { CsvEventSink, NoopEventSink, type EventSink } from "./events";
 import { makeClientMessageSchema, type ServerMessage } from "./protocol";
@@ -20,12 +22,15 @@ export interface GmersServer {
   accounts: AccountService;
   ledger: Ledger;
   progress: Progress;
+  social: Social;
+  hub: SocialHub;
   close(): Promise<void>;
 }
 
 export interface ServerDeps extends ServiceDeps {
   accountLog?: AccountLog;
   ledgerLog?: LedgerLog;
+  socialLog?: SocialLog;
   log?: RoomLog;
   events?: EventSink;
 }
@@ -35,10 +40,14 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   const events = deps.events ?? (config.eventsCsvFile ? new CsvEventSink(join(config.dataDir, config.eventsCsvFile)) : new NoopEventSink());
   // eslint-disable-next-line prefer-const -- service dibuat setelah accounts, keduanya saling merujuk lewat closure
   let service: RoomService;
-  const accounts = new AccountService(config, deps.accountLog ?? new FileAccountLog(join(config.dataDir, config.accountsFile)), deps.clock ?? realClock, (h) => service.groupsOf(h));
+  // eslint-disable-next-line prefer-const -- dideklarasikan lebih dulu karena dipakai closure sebelum diisi
+  let social: Social;
+  const accounts = new AccountService(config, deps.accountLog ?? new FileAccountLog(join(config.dataDir, config.accountsFile)), deps.clock ?? realClock, (h) => service.groupsOf(h), (id) => social.purge(id));
   const clock = deps.clock ?? realClock;
   const ledger = new Ledger(deps.ledgerLog ?? new FileLedgerLog(join(config.dataDir, config.ledgerFile)), () => clock.now());
   const progress = new Progress(ledger, config.economy);
+  social = new Social(deps.socialLog ?? new FileSocialLog(join(config.dataDir, config.socialFile)), clock);
+  const hub = new SocialHub(config, clock, social, accounts, (c) => service.roomOfConn(c as never));
   service = new RoomService(config, {
     ...deps,
     log,
@@ -47,7 +56,12 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
     hooks: {
       authenticate: (session) => accounts.identify(session),
       accountIdOf: (h) => accounts.accountIdByTokenHash(h),
-      settle: (input) => progress.settle(input),
+      settle: (input) => {
+        const rewards = progress.settle(input);
+        hub.recordGame(input.players.flatMap((p) => (p.accountId ? [p.accountId] : [])), input.ts);
+        return rewards;
+      },
+      social: hub as never,
     },
   });
   service.start();
@@ -56,8 +70,8 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   const csvPath = config.eventsCsvFile ? join(config.dataDir, config.eventsCsvFile) : null;
   const http: HttpServer = createHttpServer((req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
-    if (path.startsWith("/api/") || path === "/admin/accounts/reset") {
-      handleApi({ config, accounts, progress }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
+    if (path.startsWith("/api/") || path === "/admin/accounts/reset" || path === "/admin/reports") {
+      handleApi({ config, accounts, progress, social, hub }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
       return;
     }
     try {
@@ -122,6 +136,17 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   }, config.heartbeatIntervalMs);
   heartbeat.unref();
 
+  // Pengingat streak: dicek tiap jam; aturan jam (18.00-22.00 WIB) dan batas 1 per hari ada di hub.
+  let cancelReminder: (() => void) | null = null;
+  const scheduleReminder = (): void => {
+    cancelReminder = clock.setTimeout(() => {
+      hub.remindStreaks();
+      scheduleReminder();
+    }, 3_600_000);
+  };
+  scheduleReminder();
+  const cancelReminders = (): void => cancelReminder?.();
+
   await new Promise<void>((resolve, reject) => {
     http.once("error", reject);
     http.listen(config.port, config.host, resolve);
@@ -135,7 +160,10 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
     accounts,
     ledger,
     progress,
+    social,
+    hub,
     async close() {
+      cancelReminders();
       clearInterval(heartbeat);
       service.stop();
       for (const ws of wss.clients) ws.terminate();
@@ -274,6 +302,10 @@ const schemas = {
   profile: z.object({ name: nameS.optional(), prefs: prefsS.optional() }).strict(),
   password: z.object({ oldPassword: z.string().min(1).max(128), newPassword: passwordS }).strict(),
   del: z.object({ password: z.string().min(1).max(128) }).strict(),
+  relation: z.object({ username: z.string().trim().min(1).max(40), on: z.boolean() }).strict(),
+  report: z.object({ kind: z.enum(["user", "post"]), target: z.string().trim().min(1).max(60), reason: z.string().trim().max(300).optional() }).strict(),
+  status: z.object({ status: z.enum(["siap", "sibuk", "senyap", "dnd"]) }).strict(),
+  prefs: z.object({ invite: z.boolean().optional(), follow: z.boolean().optional(), streak: z.boolean().optional(), dm: z.boolean().optional() }).strict(),
   reset: z.object({ username: z.string().trim().min(1).max(40), newPassword: passwordS }).strict(),
 };
 
@@ -300,12 +332,22 @@ interface ApiCtx {
   config: ServerConfig;
   accounts: AccountService;
   progress: Progress;
+  social: Social;
+  hub: SocialHub;
 }
 
 async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-  const { config, accounts, progress } = ctx;
+  const { config, accounts, progress, social, hub } = ctx;
   const method = req.method ?? "GET";
   try {
+    if (path === "/admin/reports") {
+      if (method !== "GET") return sendJson(res, 405, { code: "METHOD", message: "Metode tidak diizinkan." });
+      if (!config.adminToken) return sendJson(res, 503, { code: "DISABLED", message: "Dimatikan: ADMIN_TOKEN belum diatur." });
+      if (!tokensMatch(bearer(req), config.adminToken)) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Tidak diizinkan." });
+      return sendJson(res, 200, {
+        reports: social.reports.map((r) => ({ id: r.id, ts: r.ts, kind: r.kind, target: r.target, reason: r.reason, from: accounts.profileOf(r.from)?.username ?? "(dihapus)" })),
+      });
+    }
     if (path === "/admin/accounts/reset") {
       if (method !== "POST") return sendJson(res, 405, { code: "METHOD", message: "Metode tidak diizinkan." });
       if (!config.adminToken) return sendJson(res, 503, { code: "DISABLED", message: "Dimatikan: ADMIN_TOKEN belum diatur." });
@@ -340,6 +382,76 @@ async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse,
       case "GET /api/me": {
         const me = accounts.me(session);
         return me ? sendJson(res, 200, { account: me, wallet: walletOf(session) }) : sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+      }
+      case "GET /api/friends": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const rel = social.related(me);
+        const card = (id: string) => {
+          const p = accounts.profileOf(id);
+          return p ? { username: p.username, name: p.name } : null;
+        };
+        const friends = rel.friends.flatMap((id) => {
+          const p = accounts.profileOf(id);
+          if (!p) return [];
+          const st = social.streak(me, id);
+          return [{ username: p.username, name: p.name, kelas: progress.wallet(id).kelas, online: hub.isOnline(id), status: social.status(id), streak: { count: st.count, doneToday: st.doneToday } }];
+        });
+        const list = (ids: string[]) => ids.flatMap((id) => card(id) ?? []);
+        return sendJson(res, 200, { friends, waiting: list(rel.waiting), incoming: list(rel.incoming), blocked: list(rel.blocked), status: social.status(me), prefs: social.prefsOf(me) });
+      }
+      case "GET /api/users": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const u = new URL(req.url ?? "/", "http://localhost").searchParams.get("username") ?? "";
+        const other = u ? accounts.byUsername(u) : null;
+        if (!other || other.id === me || social.isBlocked(me, other.id)) return sendJson(res, 404, { code: "NOT_FOUND", message: "Pengguna tidak ditemukan." });
+        return sendJson(res, 200, { user: { username: other.username, name: other.name, kelas: progress.wallet(other.id).kelas, relation: social.relation(me, other.id) } });
+      }
+      case "POST /api/follow":
+      case "POST /api/contact":
+      case "POST /api/block": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const b = parseBody(schemas.relation, await readJson(req));
+        const other = accounts.byUsername(b.username);
+        if (!other || other.id === me) return sendJson(res, 404, { code: "NOT_FOUND", message: "Pengguna tidak ditemukan." });
+        const kind = path.slice("/api/".length);
+        const ok = kind === "follow" ? social.follow(me, other.id, b.on) : kind === "contact" ? social.saveContact(me, other.id, b.on) : social.block(me, other.id, b.on);
+        if (!ok) return sendJson(res, 403, { code: "BLOCKED", message: "Tidak bisa melakukan itu pada pengguna ini." });
+        if (kind === "follow" && b.on) hub.notify(other.id, "follow", `${accounts.profileOf(me)?.name ?? "Seseorang"} mengikutimu`);
+        return sendJson(res, 200, { relation: social.relation(me, other.id) });
+      }
+      case "POST /api/report": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const b = parseBody(schemas.report, await readJson(req));
+        social.report(me, b.kind, b.target, b.reason ?? "");
+        return sendJson(res, 200, { ok: true });
+      }
+      case "PUT /api/status": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const b = parseBody(schemas.status, await readJson(req));
+        hub.setStatus(me, b.status as Status);
+        return sendJson(res, 200, { status: social.status(me) });
+      }
+      case "PUT /api/notif-prefs": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        const b = parseBody(schemas.prefs, await readJson(req));
+        return sendJson(res, 200, { prefs: social.setPrefs(me, b) });
+      }
+      case "GET /api/notices": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        return sendJson(res, 200, { notices: hub.feed(me).slice().reverse() });
+      }
+      case "POST /api/notices/read": {
+        const me = accounts.idOfSession(session);
+        if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
+        hub.markRead(me);
+        return sendJson(res, 200, { ok: true });
       }
       case "GET /api/leaderboard": {
         const me = accounts.idOfSession(session);

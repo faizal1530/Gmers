@@ -251,3 +251,22 @@ Server 136 (+30: ledger atomik/idempoten/pulih, kelas dan hari WIB, semua aturan
 5. **Bintang tidak punya pemakaian** di MVP selain ditampilkan (spek tidak menyebut apa yang bisa dibeli dengan Bintang).
 6. **Papan peringkat memuat akun mana pun yang pernah punya baris Trofi**, termasuk 0, urut Trofi; hanya nama tampilan.
 7. **Tidak ada penalti Trofi untuk keluar mid-game** karena keluar saat bermain tidak diizinkan; meninggalkan game dideteksi lewat giliran otomatis berturut-turut.
+
+## Rencana penuh dengan 2 game, Fase 3: pertemanan, chat 1-1, ajak main, status, notifikasi, streak (24 Nov 2026)
+
+### Dibangun
+- **Pertemanan** (`social.ts`, `social.jsonl` hanya-tambah, izin 600): teman = saling ikuti ATAU saling simpan kontak (CLAUDE.md aturan 5). Blokir memutus hubungan dan menyembunyikan pengguna dari pencarian. Pencarian hanya dengan nama pengguna persis (tidak ada daftar pengguna). Laporan pengguna masuk antrean admin (`/admin/reports`).
+- **Chat 1-1** (`socialhub.ts`): pesan diteruskan lewat WebSocket hanya antar teman (diperiksa di server setiap pesan). Bila penerima offline, pesan ditahan di **memori** server (maks 50 per penerima, 24 jam) dan tidak pernah ditulis ke disk; hilang saat server restart. Riwayat tersimpan hanya di peramban (kunci `@namapengguna`). Bila tidak lagi berteman, kolom tulis dikunci ("Kalian bukan teman lagi").
+- **Ajak main:** dari daftar teman atau chat 1-1, hanya saat pengirim ada di ruang tunggu. Kartu ajakan berisi Gabung / Nanti / Lagi sibuk, kedaluwarsa 15 menit. Status penerima: *Siap*, *Sibuk* (dibalas otomatis "lagi sibuk"), *Senyap* (tanpa bunyi), *Jangan ganggu* (ajakan ditahan sampai kembali).
+- **Streak** per pasangan teman (hari berganti 03.00 WIB, 2 pembeku per minggu), pengingat per jam, **pusat pemberitahuan** dan sakelar per jenis (ajakan, ikuti, streak, pesan).
+- **Klien:** layar Teman (cari, kartu pengguna dengan Ikuti/Simpan kontak/Blokir/Laporkan, daftar Teman/Menunggu saling/Mengikutimu/Diblokir, status, notifikasi), thread 1-1 di tab Chat, kartu ajakan. Akun yang masuk otomatis tersambung agar menerima pesan dan ajakan.
+
+### Uji
+Server 167 (+31), klien 149 (+15 di `test/social.test.ts`), E2E Chromium: dua akun saling ikuti, bertukar pesan, ajakan main muncul sebagai kartu dan Gabung membuka room pengirim.
+
+### Keputusan otomatis (Fase 3)
+1. **Isi DM tidak disimpan di disk server.** Konsekuensi: pesan untuk teman yang offline lebih dari 24 jam atau saat server restart hilang. Ini keputusan privasi yang perlu ditegaskan pemilik; kebijakan privasi masih DRAFT dan belum menyebut DM.
+2. **Kelompok teman permanen dan "pemulihan streak" tidak dibangun** (di luar yang aman dibuat otomatis); kelompok yang ada tetap berupa kode room.
+3. **Ajakan "Nanti" tidak membuat pengingat asinkron**; hanya jawaban dicatat dan ditampilkan ke pengirim.
+4. **Ajak main butuh room di ruang tunggu**; tanpa itu klien menampilkan peringatan.
+5. **Laporan hanya dicatat untuk ditinjau admin**; tidak ada penindakan otomatis (keputusan moderasi milik pemilik).

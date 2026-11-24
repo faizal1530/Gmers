@@ -1,8 +1,19 @@
 import type { KV } from "./storage";
 
 /** Riwayat chat disimpan HANYA di perangkat (peramban). Server tidak pernah menyimpan isi chat. */
+export interface InviteInfo {
+  id: string;
+  game: "gaple" | "ludo";
+  groupId: string;
+  expiresAt: number;
+  dir: "in" | "out";
+  /** pending = menunggu jawabanku (masuk); sent = terkirim (keluar); selain itu jawaban akhir. */
+  state: "pending" | "sent" | "join" | "later" | "busy" | "auto_busy" | "expired";
+}
+
 export interface StoredMsg {
-  kind: "msg" | "sys";
+  kind: "msg" | "sys" | "invite";
+  invite?: InviteInfo;
   seat: number;
   name: string;
   text: string;
@@ -16,7 +27,10 @@ export interface Member {
 }
 
 export interface Convo {
+  /** Kode kelompok (room) atau `@namapengguna` untuk percakapan 1-1 antar teman. */
   groupId: string;
+  /** Hanya untuk chat 1-1 dengan teman. */
+  dm?: { username: string; name: string };
   /** Kursi saya di sesi terakhir (untuk mengenali "teman" pada chat berdua). */
   me: number;
   members: Member[];
@@ -32,11 +46,12 @@ export const MAX_CONVOS = 30;
 export const MAX_MSGS = 200;
 
 /** Room berdua tampil seperti chat biasa; selain itu seperti grup. */
-export function kindOf(c: Pick<Convo, "members">): ConvoKind {
-  return c.members.length === 2 ? "direct" : "group";
+export function kindOf(c: Pick<Convo, "members" | "dm">): ConvoKind {
+  return c.dm || c.members.length === 2 ? "direct" : "group";
 }
 
 export function otherMember(c: Convo): Member | null {
+  if (c.dm) return { seat: -2, name: c.dm.name };
   return c.members.find((m) => m.seat !== c.me) ?? null;
 }
 
@@ -95,6 +110,28 @@ export class ChatStore {
     return c;
   }
 
+  /** Chat 1-1 dengan teman (kunci `@namapengguna`). Isi hanya di perangkat ini. */
+  ensureDm(username: string, name: string): Convo {
+    const key = `@${username}`;
+    let c = this.get(key);
+    if (!c) {
+      c = { groupId: key, dm: { username, name }, me: -1, members: [], lastTs: this.now(), unread: 0, msgs: [] };
+      this.convos.push(c);
+    } else if (c.dm) c.dm = { username, name };
+    this.save();
+    return c;
+  }
+
+  /** Perbarui status kartu ajakan di sebuah percakapan. */
+  updateInvite(groupId: string, inviteId: string, state: InviteInfo["state"]): void {
+    const c = this.get(groupId);
+    const m = c?.msgs.find((x) => x.invite?.id === inviteId);
+    if (m?.invite) {
+      m.invite.state = state;
+      this.save();
+    }
+  }
+
   /** Percakapan kosong untuk room yang diketahui server (mis. dari akun di perangkat lain). */
   ensureStub(groupId: string, ts: number): void {
     if (this.get(groupId)) return;
@@ -108,7 +145,7 @@ export class ChatStore {
     c.msgs.push(msg);
     if (c.msgs.length > MAX_MSGS) c.msgs.splice(0, c.msgs.length - MAX_MSGS);
     c.lastTs = Math.max(c.lastTs, msg.ts);
-    if (countUnread && msg.kind === "msg" && !msg.mine) c.unread++;
+    if (countUnread && (msg.kind === "msg" || msg.kind === "invite") && !msg.mine) c.unread++;
     this.save();
   }
 

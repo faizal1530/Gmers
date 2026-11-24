@@ -197,3 +197,94 @@ describe("dompet dan papan peringkat", () => {
     expect(r.json.you).toMatchObject({ rank: null, trofi: 0 });
   });
 });
+
+describe("API pertemanan, status, notifikasi, laporan", () => {
+  async function trio(over: Parameters<typeof testConfig>[0] = {}) {
+    const ctx = await boot(over);
+    const mk = async (u: string, n: string, i: number) => ((await ctx.call("POST", "/api/register", reg(u, { name: n, token: tok(i) }))).json.session as string);
+    return { ...ctx, a: await mk("andi", "Andi", 1), b: await mk("budi", "Budi", 2), c: await mk("citra", "Citra", 3) };
+  }
+
+  it("alur teman: ikuti sepihak (menunggu/masuk), saling ikuti = teman, daftar memuat status dan streak, berhenti mengikuti memutus", async () => {
+    const { call, a, b } = await trio();
+    expect((await call("POST", "/api/follow", { username: "budi", on: true }, a)).json.relation).toMatchObject({ iFollow: true, friend: false });
+    const bl = (await call("GET", "/api/friends", undefined, b)).json as { friends: unknown[]; incoming: { username: string }[] };
+    expect(bl.friends).toEqual([]);
+    expect(bl.incoming.map((x) => x.username)).toEqual(["andi"]);
+    const al = (await call("GET", "/api/friends", undefined, a)).json as { waiting: { username: string }[] };
+    expect(al.waiting.map((x) => x.username)).toEqual(["budi"]);
+    await call("POST", "/api/follow", { username: "andi", on: true }, b);
+    const both = (await call("GET", "/api/friends", undefined, a)).json as { friends: { username: string; name: string; kelas: string; online: boolean; status: string; streak: { count: number } }[]; status: string };
+    expect(both.friends).toEqual([{ username: "budi", name: "Budi", kelas: "Pemula", online: false, status: "siap", streak: { count: 0, doneToday: false } }]);
+    expect(both.status).toBe("siap");
+    await call("POST", "/api/follow", { username: "budi", on: false }, a);
+    expect(((await call("GET", "/api/friends", undefined, a)).json as { friends: unknown[] }).friends).toEqual([]);
+  });
+
+  it("saling simpan kontak juga membuat teman; mencari hanya lewat nama pengguna yang tepat; tidak bisa menemukan diri sendiri", async () => {
+    const { call, a, b } = await trio();
+    await call("POST", "/api/contact", { username: "budi", on: true }, a);
+    await call("POST", "/api/contact", { username: "andi", on: true }, b);
+    expect(((await call("GET", "/api/friends", undefined, a)).json as { friends: unknown[] }).friends).toHaveLength(1);
+    const found = await call("GET", "/api/users?username=BUDI", undefined, a);
+    expect(found.json.user).toMatchObject({ username: "budi", name: "Budi", kelas: "Pemula", relation: { friend: true, iSaved: true, savedMe: true } });
+    expect((await call("GET", "/api/users?username=bud", undefined, a)).status).toBe(404); // tidak ada pencarian sebagian
+    expect((await call("GET", "/api/users?username=andi", undefined, a)).status).toBe(404);
+    expect((await call("GET", "/api/users?username=budi")).status).toBe(401);
+  });
+
+  it("blokir: memutus pertemanan, menyembunyikan pengguna dari pencarian kedua arah, dan mencegah ikuti", async () => {
+    const { call, a, b } = await trio();
+    await call("POST", "/api/follow", { username: "budi", on: true }, a);
+    await call("POST", "/api/follow", { username: "andi", on: true }, b);
+    await call("POST", "/api/block", { username: "budi", on: true }, a);
+    expect(((await call("GET", "/api/friends", undefined, a)).json as { friends: unknown[]; blocked: { username: string }[] })).toMatchObject({ friends: [], blocked: [{ username: "budi" }] });
+    expect((await call("GET", "/api/users?username=andi", undefined, b)).status).toBe(404); // pemblokir tak terlihat
+    expect((await call("GET", "/api/users?username=budi", undefined, a)).status).toBe(404);
+    expect((await call("POST", "/api/follow", { username: "andi", on: true }, b)).status).toBe(403);
+    await call("POST", "/api/block", { username: "budi", on: false }, a);
+    expect((await call("GET", "/api/users?username=budi", undefined, a)).status).toBe(200);
+  });
+
+  it("notifikasi 'mengikutimu' masuk umpan penerima; dapat dibaca; preferensi mematikannya; Jangan ganggu tidak mengirim langsung tetapi tetap tercatat", async () => {
+    const { call, a, b, c } = await trio();
+    await call("POST", "/api/follow", { username: "budi", on: true }, a);
+    const n = (await call("GET", "/api/notices", undefined, b)).json as { notices: { kind: string; text: string; read: boolean }[] };
+    expect(n.notices).toEqual([expect.objectContaining({ kind: "follow", text: "Andi mengikutimu", read: false })]);
+    await call("POST", "/api/notices/read", {}, b);
+    expect(((await call("GET", "/api/notices", undefined, b)).json as { notices: { read: boolean }[] }).notices[0]!.read).toBe(true);
+    await call("PUT", "/api/notif-prefs", { follow: false }, b);
+    await call("POST", "/api/follow", { username: "budi", on: true }, c);
+    expect(((await call("GET", "/api/notices", undefined, b)).json as { notices: unknown[] }).notices).toHaveLength(1); // Citra tidak menambah
+    expect((await call("PUT", "/api/status", { status: "dnd" }, b)).json.status).toBe("dnd");
+    expect((await call("PUT", "/api/status", { status: "terbang" }, b)).status).toBe(400);
+    expect((await call("PUT", "/api/notif-prefs", { lain: true }, b)).status).toBe(400);
+  });
+
+  it("laporan: tersimpan, dapat dilihat admin dengan token, dan tidak membocorkan pelapor ke publik", async () => {
+    const { call, a } = await trio({ adminToken: "token-admin-uji-123456" });
+    expect((await call("POST", "/api/report", { kind: "user", target: "budi", reason: "kasar di chat" }, a)).status).toBe(200);
+    expect((await call("POST", "/api/report", { kind: "bukan", target: "budi" }, a)).status).toBe(400);
+    expect((await call("GET", "/admin/reports")).status).toBe(401);
+    expect((await call("GET", "/admin/reports", undefined, "salah")).status).toBe(401);
+    const r = await call("GET", "/admin/reports", undefined, "token-admin-uji-123456");
+    expect(r.json.reports).toEqual([expect.objectContaining({ kind: "user", target: "budi", reason: "kasar di chat", from: "andi" })]);
+    const off = await boot({ adminToken: null });
+    expect((await off.call("GET", "/admin/reports")).status).toBe(503);
+  });
+
+  it("semua endpoint sosial butuh sesi", async () => {
+    const { call } = await trio();
+    for (const [m, p, b] of [["GET", "/api/friends"], ["POST", "/api/follow", { username: "x", on: true }], ["POST", "/api/contact", { username: "x", on: true }], ["POST", "/api/block", { username: "x", on: true }], ["POST", "/api/report", { kind: "user", target: "x" }], ["PUT", "/api/status", { status: "siap" }], ["PUT", "/api/notif-prefs", { dm: false }], ["GET", "/api/notices"], ["POST", "/api/notices/read", {}]] as [string, string, unknown?][]) {
+      expect((await call(m, p, b)).status, `${m} ${p}`).toBe(401);
+    }
+  });
+
+  it("menghapus akun membersihkan hubungannya (teman tidak lagi melihat akun itu)", async () => {
+    const { call, a, b } = await trio();
+    await call("POST", "/api/follow", { username: "budi", on: true }, a);
+    await call("POST", "/api/follow", { username: "andi", on: true }, b);
+    expect((await call("DELETE", "/api/me", { password: "rahasia123" }, b)).status).toBe(200);
+    expect(((await call("GET", "/api/friends", undefined, a)).json as { friends: unknown[]; waiting: unknown[] }).friends).toEqual([]);
+  });
+});

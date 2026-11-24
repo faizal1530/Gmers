@@ -31,6 +31,55 @@ export interface LeaderRow {
   isYou: boolean;
 }
 
+export interface Relation {
+  iFollow: boolean;
+  followsMe: boolean;
+  iSaved: boolean;
+  savedMe: boolean;
+  friend: boolean;
+  iBlocked: boolean;
+}
+export type StatusId = "siap" | "sibuk" | "senyap" | "dnd";
+export interface FriendRow {
+  username: string;
+  name: string;
+  kelas: string;
+  online: boolean;
+  status: StatusId;
+  streak: { count: number; doneToday: boolean };
+}
+export interface PersonRow {
+  username: string;
+  name: string;
+}
+export interface NotifPrefs {
+  invite: boolean;
+  follow: boolean;
+  streak: boolean;
+  dm: boolean;
+}
+export interface FriendsData {
+  friends: FriendRow[];
+  waiting: PersonRow[];
+  incoming: PersonRow[];
+  blocked: PersonRow[];
+  status: StatusId;
+  prefs: NotifPrefs;
+}
+export interface UserCard {
+  username: string;
+  name: string;
+  kelas: string;
+  relation: Relation;
+}
+export interface NoticeRow {
+  id: string;
+  kind: "follow" | "invite" | "streak" | "dm";
+  text: string;
+  ts: number;
+  read: boolean;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string };
 
 type FetchLike = (input: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ status: number; json(): Promise<unknown> }>;
@@ -65,6 +114,30 @@ export class Api {
   }
   leaderboard(): Promise<ApiResult<{ rows: LeaderRow[]; you: { rank: number | null; trofi: number; kelas: string } }>> {
     return this.call("GET", "/api/leaderboard");
+  }
+  friends(): Promise<ApiResult<FriendsData>> {
+    return this.call("GET", "/api/friends");
+  }
+  user(username: string): Promise<ApiResult<{ user: UserCard }>> {
+    return this.call("GET", `/api/users?username=${encodeURIComponent(username)}`);
+  }
+  relate(kind: "follow" | "contact" | "block", username: string, on: boolean): Promise<ApiResult<{ relation: Relation }>> {
+    return this.call("POST", `/api/${kind}`, { username, on });
+  }
+  report(kind: "user" | "post", target: string, reason: string): Promise<ApiResult<{ ok: true }>> {
+    return this.call("POST", "/api/report", { kind, target, reason });
+  }
+  setStatus(status: StatusId): Promise<ApiResult<{ status: StatusId }>> {
+    return this.call("PUT", "/api/status", { status });
+  }
+  setNotifPrefs(prefs: Partial<NotifPrefs>): Promise<ApiResult<{ prefs: NotifPrefs }>> {
+    return this.call("PUT", "/api/notif-prefs", prefs);
+  }
+  notices(): Promise<ApiResult<{ notices: NoticeRow[] }>> {
+    return this.call("GET", "/api/notices");
+  }
+  readNotices(): Promise<ApiResult<{ ok: true }>> {
+    return this.call("POST", "/api/notices/read", {});
   }
   logout(): Promise<ApiResult<{ ok: true }>> {
     return this.call("POST", "/api/logout", {});

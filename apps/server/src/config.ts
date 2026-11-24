@@ -32,6 +32,13 @@ export interface ServerConfig {
   accountsFile: string;
   /** Buku besar (Trofi, Bintang, Koin) di dataDir. */
   ledgerFile: string;
+  /** Hubungan sosial (ikuti, kontak, blokir, status, streak, laporan). */
+  socialFile: string;
+  /** Masa berlaku undangan main (spek 7.2: 15 menit untuk live). */
+  inviteTtlMs: number;
+  /** Pesan 1-1 yang menunggu penerima offline (hanya di memori, tidak pernah ke disk). */
+  dmPendingMax: number;
+  dmPendingTtlMs: number;
   /** Biaya scrypt (N). Uji memakai nilai kecil. */
   passwordCost: number;
   /** Masa berlaku sesi masuk. null = tidak pernah kedaluwarsa (seperti WhatsApp): sesi hanya berakhir bila pengguna keluar, kata sandi diganti, atau admin mereset. */
@@ -78,6 +85,10 @@ export const defaultServerConfig: ServerConfig = {
   roomLogFile: "rooms.jsonl",
   accountsFile: "accounts.jsonl",
   ledgerFile: "ledger.jsonl",
+  socialFile: "social.jsonl",
+  inviteTtlMs: 15 * 60 * 1000,
+  dmPendingMax: 50,
+  dmPendingTtlMs: 24 * 60 * 60 * 1000,
   passwordCost: 16384,
   sessionTtlMs: null,
   loginMaxFails: 5,

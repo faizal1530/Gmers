@@ -2,7 +2,7 @@ import type { StateMessage } from "@gmers/server/protocol";
 import { clear, h } from "../dom";
 import { id } from "../i18n/id";
 import { CHAT_MAX, ChatLimiter, cleanText } from "../logic";
-import { ChatStore, kindOf, otherMember, type Convo, type StoredMsg } from "../chatstore";
+import { ChatStore, kindOf, otherMember, type Convo, type InviteInfo, type StoredMsg } from "../chatstore";
 import { avatar } from "./avatar";
 import { icon } from "./icons";
 
@@ -20,6 +20,13 @@ export interface HubDeps {
   /** Pengguna tamu (belum punya akun). */
   isGuest: () => boolean;
   onUnread: () => void;
+  /** Chat 1-1: kirim pesan ke teman (lewat server, tidak disimpan di sana). */
+  sendDm: (username: string, text: string) => boolean;
+  /** Apakah masih berteman (saling ikuti atau saling simpan kontak). */
+  isFriend: (username: string) => boolean;
+  onInviteFriend: (username: string) => void;
+  onInviteReply: (inv: InviteInfo, reply: "join" | "later" | "busy") => void;
+  onFriends: () => void;
   now?: () => number;
 }
 
@@ -60,9 +67,9 @@ export function convoTitle(c: Convo): string {
 }
 
 function preview(c: Convo): string {
-  const last = [...c.msgs].reverse().find((m) => m.kind === "msg") ?? c.msgs[c.msgs.length - 1];
+  const last = [...c.msgs].reverse().find((m) => m.kind !== "sys") ?? c.msgs[c.msgs.length - 1];
   if (!last) return id.chat.noMessages;
-  if (last.kind === "sys") return last.text;
+  if (last.kind === "sys" || last.kind === "invite") return last.text;
   if (last.mine) return `${id.chat.youPrefix}${last.text}`;
   return kindOf(c) === "group" ? `${last.name}: ${last.text}` : last.text;
 }
@@ -190,6 +197,7 @@ export class ChatHub {
         { class: "cl-head" },
         h("h1", {}, id.chat.title),
         h("span", { class: `pill${connected ? " ok" : ""}`, role: "status" }, h("span", { class: `dot ${connected ? "on" : "off"}`, "aria-hidden": "true" }), connected ? id.chat.connOnline : id.chat.connOffline),
+        h("button", { type: "button", class: "btn small", "data-testid": "open-friends", onclick: this.d.onFriends }, id.friends.open),
         h("button", { type: "button", class: "me-btn", "aria-label": id.tabs.profile, "data-testid": "me-btn", onclick: this.d.toProfile }, avatar(myName || id.chat.me, 0, "md")),
       ),
       rows.length > 0 && this.d.isGuest()
@@ -207,6 +215,7 @@ export class ChatHub {
   private subtitle(c: Convo): string {
     const live = this.d.live();
     const isLive = live?.room.groupId === c.groupId;
+    if (c.dm) return `@${c.dm.username}`;
     if (kindOf(c) === "direct") {
       const other = otherMember(c);
       if (isLive && other) return live?.room.seats[other.seat]?.connected ? id.chat.online : id.chat.offline;
@@ -227,7 +236,10 @@ export class ChatHub {
       kindOf(c) === "direct" && other ? avatar(other.name, other.seat, "md") : groupAvatar("md"),
       h("span", { class: "th-title" }, h("b", {}, convoTitle(c)), h("span", { class: "hint", "data-testid": "chat-sub" }, this.subtitle(c))),
     );
-    if (isLive) head.append(h("button", { type: "button", class: "dice-btn", "data-testid": "to-table", "aria-label": id.chat.toTable, onclick: this.d.toRoom }, icon("room")));
+    if (c.dm) {
+      const dm = c.dm;
+      if (this.d.isFriend(dm.username)) head.append(h("button", { type: "button", class: "btn small primary", "data-testid": "dm-invite", onclick: () => this.d.onInviteFriend(dm.username) }, id.friends.invite));
+    } else if (isLive) head.append(h("button", { type: "button", class: "dice-btn", "data-testid": "to-table", "aria-label": id.chat.toTable, onclick: this.d.toRoom }, icon("room")));
   }
 
   private renderLog(c: Convo): void {
@@ -251,6 +263,7 @@ export class ChatHub {
 
   private bubble(m: StoredMsg, group: boolean): HTMLElement {
     if (m.kind === "sys") return h("li", { class: "sys" }, m.text);
+    if (m.kind === "invite" && m.invite) return this.inviteCard(m, m.invite);
     return h(
       "li",
       { class: m.mine ? "bub mine" : "bub" },
@@ -260,20 +273,38 @@ export class ChatHub {
     );
   }
 
+  private inviteCard(m: StoredMsg, inv: InviteInfo): HTMLElement {
+    const expired = inv.state === "pending" && inv.expiresAt <= this.now();
+    const actions: HTMLElement[] = [];
+    let status = "";
+    if (inv.dir === "in") {
+      if (inv.state === "pending" && !expired) {
+        const btn = (reply: "join" | "later" | "busy", label: string, cls: string): HTMLElement => h("button", { type: "button", class: `btn small${cls}`, "data-testid": `invite-${reply}`, onclick: () => this.d.onInviteReply(inv, reply) }, label);
+        actions.push(btn("join", id.dm.join, " primary"), btn("later", id.dm.later, ""), btn("busy", id.dm.busy, ""));
+      } else status = expired ? id.dm.expired : inv.state === "join" || inv.state === "later" || inv.state === "busy" ? id.dm.answered[inv.state] : id.dm.expired;
+    } else status = id.dm.result[inv.state === "pending" ? "sent" : inv.state];
+    return h("li", { class: "invite-card", "data-testid": "invite-card", "data-state": expired ? "expired" : inv.state }, h("span", {}, m.text), actions.length ? h("span", { class: "actions" }, actions) : h("span", { class: "hint", "data-testid": "invite-status" }, status));
+  }
+
   private renderFoot(c: Convo): void {
     const foot = this.foot as HTMLElement;
     const live = this.d.live();
     const isLive = live?.room.groupId === c.groupId;
-    const key = `${isLive}:${this.d.connected()}`;
+    const canDm = c.dm ? this.d.isFriend(c.dm.username) : false;
+    const key = `${isLive}:${this.d.connected()}:${canDm}`;
     if (key === this.footKey) return;
     this.footKey = key;
     clear(foot);
     this.input = null;
-    if (!isLive) {
+    if (c.dm && !canDm) {
+      foot.append(h("div", { class: "th-notfriend", "data-testid": "dm-locked" }, h("p", { class: "hint" }, id.dm.notFriends)));
+      return;
+    }
+    if (!isLive && !c.dm) {
       foot.append(h("div", { class: "th-off" }, h("p", { class: "hint" }, id.chat.notLive), h("button", { type: "button", class: "btn primary", "data-testid": "rejoin", onclick: () => this.d.rejoin(c.groupId) }, id.chat.rejoin)), h("p", { class: "hint center" }, id.chat.deviceNote));
       return;
     }
-    const input = h("input", { class: "th-input", type: "text", maxlength: CHAT_MAX, placeholder: id.chat.placeholder, "aria-label": id.chat.placeholder, autocomplete: "off", "data-testid": "chat-input" });
+    const input = h("input", { class: "th-input", type: "text", maxlength: CHAT_MAX, placeholder: c.dm ? id.dm.placeholder : id.chat.placeholder, "aria-label": id.chat.placeholder, autocomplete: "off", "data-testid": "chat-input" });
     this.input = input;
     this.note = h("p", { class: "hint bad", role: "status" });
     this.tray = h("div", { class: "emoji-tray", hidden: true, role: "group", "aria-label": id.chat.emoji }, id.chat.emojis.map((e) => h("button", { type: "button", class: "emoji", onclick: () => { input.value += e; input.focus(); } }, e)));
@@ -289,7 +320,7 @@ export class ChatHub {
             this.submit();
           },
         },
-        h("button", { type: "button", class: "dice-btn", "aria-label": id.chat.toTable, onclick: this.d.toRoom }, icon("room")),
+        c.dm ? null : h("button", { type: "button", class: "dice-btn", "aria-label": id.chat.toTable, onclick: this.d.toRoom }, icon("room")),
         h("button", { type: "button", class: "ic-btn", "aria-label": id.chat.emoji, "data-testid": "emoji-toggle", onclick: () => { const t = this.tray as HTMLElement; t.hidden = !t.hidden; } }, icon("smile")),
         input,
         h("button", { type: "submit", class: "send-btn", "data-testid": "chat-send", "aria-label": id.chat.send }, icon("send")),
@@ -309,7 +340,9 @@ export class ChatHub {
       return;
     }
     (this.note as HTMLElement).textContent = "";
-    if (this.d.send(text)) this.input.value = "";
+    const open = this.mode.kind === "thread" ? this.d.store.get(this.mode.groupId) : null;
+    const ok = open?.dm ? this.d.sendDm(open.dm.username, text) : this.d.send(text);
+    if (ok) this.input.value = "";
   }
 
   private scrollEnd(): void {

@@ -79,6 +79,12 @@ export interface Hooks {
   accountIdOf?(tokenHash: string): string | null;
   /** Catat hasil game (Trofi, Bintang). Mengembalikan hadiah per akun. */
   settle?(input: SettleInput): Reward[];
+  /** Pesan 1-1, ajakan main, dan notifikasi (lihat SocialHub). */
+  social?: {
+    attach(conn: Conn): void;
+    detach(conn: Conn): void;
+    handle(conn: Conn, msg: { type: string; [k: string]: unknown }): void;
+  };
 }
 
 export interface ServiceDeps {
@@ -135,6 +141,12 @@ export class RoomService {
     this.hooks = deps.hooks ?? {};
     this.matchmaker = new Matchmaker<Conn>(this.clock, this.cfg.economy, (players, game) => this.startRankedMatch(players, game));
     this.newSeed = deps.newSeed ?? (() => randomBytes(12).toString("hex"));
+  }
+
+  /** Room tempat koneksi ini duduk (untuk mengajak teman). */
+  roomOfConn(conn: Conn): { groupId: string; phase: "lobby" | "playing" | "finished" } | null {
+    const ctx = this.contextOf(conn);
+    return ctx ? { groupId: ctx.room.groupId, phase: ctx.room.phase } : null;
   }
 
   /** Kelompok yang sedang diduduki sebuah perangkat (untuk menyertakannya saat mendaftar akun). */
@@ -487,6 +499,11 @@ export class RoomService {
         return this.queueRanked(conn, msg.game);
       case "cancel_queue":
         return this.cancelQueue(conn);
+      case "dm_send":
+      case "invite_send":
+      case "invite_reply":
+        this.hooks.social?.handle(conn, msg);
+        return;
       case "create_room":
         return this.createGroup(conn, msg.name, msg.token, msg.game);
       case "open_link":
@@ -782,6 +799,7 @@ export class RoomService {
     }
     conn.account = acc;
     conn.send({ type: "auth_ok", username: acc.username, name: acc.name });
+    this.hooks.social?.attach(conn);
     const w = this.matchmaker.waiting(acc.id);
     conn.send({ type: "queue", state: w ? "waiting" : "idle", game: w?.game ?? null, since: w?.since ?? null });
   }
@@ -927,6 +945,7 @@ export class RoomService {
 
   onDisconnect(conn: Conn): void {
     this.matchmaker.dropConn(conn);
+    this.hooks.social?.detach(conn);
     const ctx = this.contextOf(conn);
     conn.session = null;
     if (!ctx) return;

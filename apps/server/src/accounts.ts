@@ -123,6 +123,8 @@ export class AccountService {
     private readonly clock: Clock,
     /** Kelompok yang sedang diduduki perangkat itu saat mendaftar (agar ikut tercatat di akun). */
     private readonly groupsFor: (tokenHash: string) => string[] = () => [],
+    /** Dipanggil saat akun dihapus (membersihkan hubungan sosial). */
+    private readonly onDelete: (accountId: string) => void = () => undefined,
   ) {
     this.restore();
   }
@@ -290,6 +292,18 @@ export class AccountService {
     return a ? { name: a.name, username: a.username } : null;
   }
 
+  /** Cari akun lewat nama pengguna (tanpa membedakan huruf besar/kecil). Hanya info publik. */
+  byUsername(username: string): { id: string; username: string; name: string } | null {
+    const id = this.byKey.get(username.trim().toLowerCase());
+    const a = id ? this.byId.get(id) : undefined;
+    return a ? { id: a.id, username: a.username, name: a.name } : null;
+  }
+
+  profileOf(accountId: string): { id: string; username: string; name: string } | null {
+    const a = this.byId.get(accountId);
+    return a ? { id: a.id, username: a.username, name: a.name } : null;
+  }
+
   idOfSession(session: string | null): string | null {
     return this.find(session)?.id ?? null;
   }
@@ -337,6 +351,7 @@ export class AccountService {
     if (!(await this.verify(password, a.pass))) return fail(401, "BAD_CREDENTIALS", "Kata sandi salah.");
     this.unindex(a.id);
     this.log.append({ t: "delete", id: a.id });
+    this.onDelete(a.id);
     return { ok: true };
   }
 
