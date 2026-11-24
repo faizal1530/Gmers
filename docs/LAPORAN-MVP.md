@@ -103,7 +103,7 @@ Per kelompok: `Game selesai`, `Hari sah` (hari WIB dengan game selesai berpemain
 - `GET /admin/events.csv` tanpa token dan dengan token salah: lulus (401).
 - Klien WebSocket: buat kelompok, duduk dua bot, mainkan satu game sampai selesai (`blocked`, 16 langkah): lulus.
 - CSV dengan `ADMIN_TOKEN`: lulus; memuat `group_created`, `player_joined` x2, `game_started`, `game_finished`.
-- Redeploy/restart dan pemulihan: lihat catatan di bawah.
+- Redeploy layanan (deployment baru) lalu CSV dibaca ulang: lulus; 6 baris peristiwa tetap ada, jadi Volume bekerja. Game yang sedang berjalan saat restart tidak diuji (hanya game selesai).
 
 **Variabel yang diatur (nilai hanya di dasbor Railway > Variables):** `ADMIN_TOKEN`, `HASH_SALT` (acak 32 byte, dibuat dengan `openssl rand -hex 32`), `DATA_DIR=/data`. `PORT` diisi Railway.
 
