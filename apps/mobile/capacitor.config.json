@@ -1,0 +1,11 @@
+{
+  "appId": "id.gmers.app",
+  "appName": "Gmers",
+  "webDir": "../web/dist",
+  "server": {
+    "url": "https://gmers-production.up.railway.app",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "backgroundColor": "#f7f2ea"
+}

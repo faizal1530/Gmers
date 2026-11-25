@@ -301,3 +301,7 @@ Server 188 (+21: validasi teks, aturan feed, blokir, batas harian, pemulihan dan
 ### Keputusan otomatis (Fase 5)
 1. Angka batas laju adalah tebakan konservatif untuk 10 kelompok; naikkan bila pengguna sah terkena.
 2. Pembatas HTTP per akun hanya untuk permintaan bersesi; pendaftaran dan masuk tetap dibatasi pembatas global dan penguncian yang sudah ada.
+
+## Aplikasi native Android dan iOS (25 Nov 2026)
+Dibangun `apps/mobile` (Capacitor 8) yang membungkus klien web; `docs/MOBILE.md` berisi cara build dan catatan. Hasil: **APK debug Android berhasil dibuild** (4,9 MB, minSdk 24, targetSdk 36, hanya izin internet), proyek iOS dibuat tetapi tidak bisa dibuild di Linux. Ikon dan splash adalah placeholder.
+Keputusan otomatis: (1) `server.url` ke Railway, bukan aset dibundel: pembaruan instan tetapi butuh internet dan berisiko ditolak App Review; (2) `appId` `id.gmers.app` adalah tebakan; (3) APK tidak dimasukkan ke git (artefak build). Belum diuji di perangkat atau emulator.
