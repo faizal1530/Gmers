@@ -45,6 +45,7 @@ export class SocialHub {
   private readonly invites = new Map<string, Invite>();
   private readonly feeds = new Map<string, Notice[]>();
   private readonly dmTimes = new Map<string, number[]>();
+  private readonly inviteTimes = new Map<string, number[]>();
   private readonly reminded = new Map<string, number>();
 
   constructor(
@@ -166,6 +167,14 @@ export class SocialHub {
   private invite(conn: HubConn, me: string, to: string, game: GameId): void {
     const other = this.friendOrError(conn, me, to);
     if (!other) return;
+    const nowMs = this.clock.now();
+    const recent = (this.inviteTimes.get(me) ?? []).filter((t) => nowMs - t < 60_000);
+    if (recent.length >= this.cfg.inviteBurst) {
+      conn.send(err("RATE_LIMITED", "Terlalu banyak ajakan. Tunggu sebentar."));
+      return;
+    }
+    recent.push(nowMs);
+    this.inviteTimes.set(me, recent);
     const room = this.roomOf(conn);
     if (!room || room.phase === "playing") {
       conn.send(err("NO_ROOM", "Buka room dulu (di ruang tunggu), lalu ajak temanmu."));

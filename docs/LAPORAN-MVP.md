@@ -136,3 +136,29 @@ Pemain bisa **mendaftar dengan nama pengguna + kata sandi** (opsional; tamu teta
 - **Siapkan cara menerima permintaan "lupa kata sandi"** (tanpa email, hanya Anda yang bisa mereset lewat `/admin/accounts/reset`).
 - Putuskan apakah sesi tanpa kedaluwarsa dapat diterima (HP hilang tetap masuk), dan apakah akun sebaiknya tetap opsional selama uji 10 kelompok.
 - **Hash kata sandi (scrypt) belum ditinjau pihak ketiga;** untuk rilis publik pertimbangkan tinjauan keamanan.
+
+## 11. Rencana penuh dengan 2 game (Fase 1-5, 24-25 Nov 2026)
+
+Atas permintaan "implementasi seluruh rencana dengan 2 games" (Gaple dan Ludo, tetap web + Node + berkas di Volume), semua yang **tidak memerlukan keputusan hukum, uang, atau akun pihak ketiga** sudah dibangun. Rincian dan keputusan otomatis per fase: `docs/CATATAN-TAHAP.md`.
+
+| Fase | Isi | Status |
+|---|---|---|
+| 1 | Mesin Ludo (10.000 simulasi), room game-agnostic, UI Ludo | selesai, lulus |
+| 2 | Trofi, kelas, Bintang, ledger, Ranked lawan acak, papan peringkat | selesai, lulus |
+| 3 | Teman, chat 1-1, ajak main, status, notifikasi, streak | selesai, lulus |
+| 4 | Komunitas (feed teks), Toko Koin simulasi, Live (Tonton tertunda) | selesai, lulus |
+| 5 | Batas laju, dokumen, verifikasi | selesai, lulus |
+
+**Sengaja TIDAK dibangun** (butuh keputusan Anda atau pihak ketiga):
+- **Tiket dan taruhan** (butuh konsultasi hukum tertulis, sakelar mati jarak jauh, dan batas usia 18+ sesuai spesifikasi 9.4).
+- **Pembayaran dan pembelian uang nyata** (RevenueCat, toko aplikasi). Koin di Toko hanya simulasi gratis.
+- **Suara/telepon** (butuh TURN/coturn dan kebijakan rekaman), **iklan** (butuh AdMob dan kebijakan kategori), **aplikasi native** (Expo), **unggah foto/video**, dan **Remi** (aturan belum dikunci).
+- Postgres/Redis/layanan berbayar (diputuskan tetap berkas di Volume).
+
+**Perlu tindakan Faizal (tambahan):**
+1. **Cadangan** `ledger.jsonl`, `social.jsonl`, `community.jsonl`, `shop.jsonl` (DEPLOY.md bagian 5c).
+2. **Privasi dan hukum:** teks `/privasi` kini menyebut teman, DM, Komunitas, dan Live tetapi masih DRAF. DM untuk teman offline ditahan di memori server maks 24 jam (keputusan Anda: tetap begitu).
+3. **Moderasi:** Komunitas hanya punya laporan yang Anda baca lewat `/admin/reports`; tidak ada penindakan otomatis dan tidak ada daftar kata terlarang. Putuskan siapa yang meninjau dan seberapa cepat sebelum membuka Komunitas ke publik.
+4. **Satu replika saja** (DM tertahan, antrean Ranked, dan penonton ada di memori).
+5. **Belum diuji di perangkat asli** (bunyi, tata letak papan Ludo di layar selain 360 px) dan **belum diuji deploy Railway** untuk fitur baru; gabungkan ke `main` hanya bila Anda siap memantau deploy.
+6. **Angka tebakan yang perlu ditinjau:** Trofi 3 pemain, 50 Koin harian, harga barang Toko, penundaan Live 30 detik, semua batas laju.

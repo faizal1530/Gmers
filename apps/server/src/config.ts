@@ -54,6 +54,12 @@ export interface ServerConfig {
   loginLockMs: number;
   /** Pembatas pendaftaran global (tanpa membaca IP): paling banyak registerBurst per menit. */
   registerBurst: number;
+  /** Batas permintaan HTTP per akun per menit, batas pesan WebSocket per sambungan, undangan per menit, laporan per hari. */
+  apiPerMinute: number;
+  wsBurst: number;
+  wsWindowMs: number;
+  inviteBurst: number;
+  reportsPerDay: number;
   /** Null = tidak mencatat peristiwa ke CSV. */
   eventsCsvFile: string | null;
   /** Folder hasil build klien web yang disajikan server (null = tidak menyajikan situs). */
@@ -105,6 +111,11 @@ export const defaultServerConfig: ServerConfig = {
   loginMaxFails: 5,
   loginLockMs: 10 * 60 * 1000,
   registerBurst: 30,
+  apiPerMinute: 120,
+  wsBurst: 40,
+  wsWindowMs: 5000,
+  inviteBurst: 5,
+  reportsPerDay: 20,
   eventsCsvFile: "events.csv",
   staticDir: null,
   adminToken: null,

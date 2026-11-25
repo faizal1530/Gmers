@@ -120,6 +120,23 @@ Perintah itu mengganti kata sandi dan mengeluarkan akun itu dari semua perangkat
 
 Sesi masuk tidak kedaluwarsa (seperti WhatsApp). Mengatur batas masa berlaku: `sessionTtlMs` di `apps/server/src/config.ts`.
 
+## 5c. Berkas data tambahan (Fase 2-4)
+
+Selain `accounts.jsonl`, server menulis berkas hanya-tambah di `/data` yang **tidak bisa dibuat ulang** dan wajib masuk cadangan yang sama:
+
+| Berkas | Isi |
+|---|---|
+| `ledger.jsonl` | Buku besar Trofi, Bintang, Koin (satu-satunya sumber saldo) |
+| `social.jsonl` | Ikuti, simpan kontak, blokir, status, preferensi, hari streak, laporan |
+| `community.jsonl` | Kiriman, balasan, suka, simpan, sembunyi Komunitas |
+| `shop.jsonl` | Barang kosmetik yang dipasang (kepemilikan dihitung dari ledger) |
+
+Semua berizin 600. Tidak ada isi chat (room, 1-1, atau penonton) di berkas mana pun. Satu replika saja: status DM yang tertahan, penonton Live, dan antrean Ranked ada di memori proses.
+
+Batas laju bawaan (ubah di `apps/server/src/config.ts`): 120 permintaan HTTP per akun per menit, 40 pesan WebSocket per 5 detik per sambungan (putus bila terus membanjir), 5 ajakan per menit, 20 laporan per hari, 20 kiriman Komunitas per hari. Alamat IP tidak dibaca atau disimpan.
+
+Laporan pengguna (pengguna atau kiriman) dibaca admin lewat `GET /admin/reports` dengan `Authorization: Bearer ADMIN_TOKEN`. Tidak ada penindakan otomatis; Anda memutuskan.
+
 ## 6. Mengekspor CSV peristiwa
 
 Ganti `ALAMAT` dengan alamat situs dan `TOKEN` dengan nilai `ADMIN_TOKEN`:

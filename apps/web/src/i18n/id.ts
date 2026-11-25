@@ -527,6 +527,15 @@ export const id = {
         ],
       },
       {
+        heading: "Teman, chat 1-1, Komunitas, dan Live (hanya akun)",
+        items: [
+          "Daftar teman, blokir, status, dan laporan disimpan di server. Pesan 1-1 untuk teman yang sedang offline hanya ditahan di memori server paling lama 24 jam dan tidak ditulis ke disk; riwayatnya hanya ada di perangkatmu.",
+          "Kiriman Komunitas (teks, suka, simpanan) disimpan di server sampai kamu menghapusnya atau menghapus akunmu. Isi chat room dan chat penonton tidak disimpan.",
+          "Room yang dinyalakan \"boleh ditonton\" bisa dilihat penonton yang punya akun, dengan tertunda dan tanpa kartu pemain.",
+          "Koin di Toko hanyalah simulasi; tidak ada pembayaran uang nyata.",
+        ],
+      },
+      {
         heading: "Untuk apa",
         items: ["Menjalankan permainan dan memahami apakah kelompok teman mau main lagi di hari yang berbeda (uji produk Gmers). Data tidak dijual dan tidak dibagikan."],
       },

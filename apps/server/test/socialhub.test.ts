@@ -296,4 +296,17 @@ describe("streak dan pengingat", () => {
     w.hub.remindStreaks(at("2026-11-27", "19:00"));
     expect(w.hub.feed(a.id)).toHaveLength(before);
   });
+  it("batas ajakan per menit: kelebihan ditolak, lalu pulih setelah semenit", async () => {
+    const w = world({ inviteBurst: 2 });
+    const a = await user(w, "Andi", 1);
+    const b = await user(w, "Budi", 2);
+    makeFriends(w, a, b);
+    send(w, a.conn, { type: "create_room", name: "Andi", token: a.token, game: "ludo" });
+    for (let i = 0; i < 3; i++) send(w, a.conn, { type: "invite_send", to: "budi", game: "ludo" });
+    expect(a.conn.errors().filter((e) => e.code === "RATE_LIMITED")).toHaveLength(1);
+    w.clock.advance(61_000);
+    send(w, a.conn, { type: "invite_send", to: "budi", game: "ludo" });
+    expect(a.conn.errors().filter((e) => e.code === "RATE_LIMITED")).toHaveLength(1);
+  });
+
 });

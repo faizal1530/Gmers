@@ -291,3 +291,13 @@ Server 188 (+21: validasi teks, aturan feed, blokir, batas harian, pemulihan dan
 4. **Kosmetik hanya lokal:** pemain lain belum melihat skin atau bingkai milikmu (butuh perubahan protokol room).
 5. **Penundaan 30 detik** (batas bawah dari rentang 30-60 detik di rencana); room siaran memakai memori server, bingkai dibuang saat room dibersihkan.
 6. **Jumlah penonton dan chat penonton tidak masuk log JSONL.**
+
+## Rencana penuh dengan 2 game, Fase 5: pengerasan, dokumen, verifikasi (25 Nov 2026)
+
+### Dibangun
+- **Batas laju** (tanpa membaca IP): 120 permintaan HTTP per akun per menit, 40 pesan WebSocket per 5 detik per sambungan (kelebihan dibuang dengan satu peringatan, putus bila terus membanjir), 5 ajakan per menit, 20 laporan per hari; ditambah batas yang sudah ada (DM 10 per 10 detik, chat room, 20 kiriman Komunitas per hari, chat penonton 1,5 detik). Semua angka di `config.ts`.
+- **Dokumen:** DEPLOY.md bagian 5c (berkas data baru wajib dicadangkan), LAPORAN-MVP.md bagian 11 (status dan daftar yang sengaja tidak dibangun), CLAUDE.md (struktur), teks `/privasi` (DRAF) kini menyebut teman, DM, Komunitas, Live, dan Toko simulasi.
+
+### Keputusan otomatis (Fase 5)
+1. Angka batas laju adalah tebakan konservatif untuk 10 kelompok; naikkan bila pengguna sah terkena.
+2. Pembatas HTTP per akun hanya untuk permintaan bersesi; pendaftaran dan masuk tetap dibatasi pembatas global dan penguncian yang sudah ada.

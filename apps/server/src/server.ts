@@ -5,7 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { z } from "zod";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AccountService, FileAccountLog, isAuthError, type AccountLog } from "./accounts";
-import { realClock } from "./clock";
+import { realClock, type Clock } from "./clock";
 import { COMMUNITIES, Community, FileCommunityLog, type CommunityLog } from "./community";
 import { FileShopLog, Shop, type ShopLog } from "./shop";
 import { Ledger, FileLedgerLog, type LedgerLog } from "./ledger";
@@ -93,7 +93,7 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
   const http: HttpServer = createHttpServer((req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
     if (path.startsWith("/api/") || path === "/admin/accounts/reset" || path === "/admin/reports") {
-      handleApi({ config, accounts, progress, social, hub, community, shop, service }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
+      handleApi({ config, accounts, progress, social, hub, community, shop, service, clock, apiHits }, req, res, path).catch(() => sendJson(res, 500, { code: "SERVER_ERROR", message: "Terjadi kesalahan di server. Coba lagi." }));
       return;
     }
     try {
@@ -103,6 +103,7 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
       res.end("Kesalahan server.");
     }
   });
+  const apiHits = new Map<string, number[]>();
   const wss = new WebSocketServer({ server: http, maxPayload: config.maxMessageBytes });
   const alive = new WeakMap<WebSocket, boolean>();
 
@@ -120,9 +121,22 @@ export async function startServer(config: ServerConfig, deps: ServerDeps = {}): 
       },
     };
     alive.set(ws, true);
+    let wsTimes: number[] = [];
+    let wsOver = 0;
     ws.on("pong", () => alive.set(ws, true));
     ws.on("message", (data) => {
       alive.set(ws, true);
+      // Pembatas banjir pesan per sambungan (tanpa IP): buang kelebihan, putuskan bila terus membanjir.
+      const nowMs = clock.now();
+      wsTimes = wsTimes.filter((t) => nowMs - t < config.wsWindowMs);
+      if (wsTimes.length >= config.wsBurst) {
+        wsOver++;
+        if (wsOver > config.wsBurst) ws.close(1008, "terlalu banyak pesan");
+        else if (wsOver === 1) conn.send({ type: "error", code: "RATE_LIMITED", message: "Terlalu banyak pesan. Pelan-pelan ya." });
+        return;
+      }
+      wsOver = 0;
+      wsTimes.push(nowMs);
       let raw: unknown;
       try {
         raw = JSON.parse(data.toString());
@@ -357,6 +371,8 @@ function bearer(req: IncomingMessage): string | null {
 }
 
 interface ApiCtx {
+  clock: Clock;
+  apiHits: Map<string, number[]>;
   community: Community;
   shop: Shop;
   service: RoomService;
@@ -368,7 +384,7 @@ interface ApiCtx {
 }
 
 async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-  const { config, accounts, progress, social, hub, community, shop, service } = ctx;
+  const { config, accounts, progress, social, hub, community, shop, service, clock } = ctx;
   const method = req.method ?? "GET";
   try {
     if (path === "/admin/reports") {
@@ -397,6 +413,14 @@ async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse,
       return id ? progress.wallet(id) : null;
     };
     const meId = accounts.idOfSession(session);
+    if (meId) {
+      // Batas permintaan per akun (tanpa IP): geser jendela 1 menit.
+      const t = clock.now();
+      const hits = (ctx.apiHits.get(meId) ?? []).filter((x) => t - x < 60_000);
+      if (hits.length >= config.apiPerMinute) return sendJson(res, 429, { code: "RATE_LIMITED", message: "Terlalu banyak permintaan. Coba lagi sebentar lagi." });
+      hits.push(t);
+      ctx.apiHits.set(meId, hits);
+    }
     if (path === "/api/communities" || path === "/api/feed" || path.startsWith("/api/posts") || path.startsWith("/api/replies") || path.startsWith("/api/shop") || path === "/api/live") {
       if (!meId) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
       const fail = (r: { code: string; message: string }): void => sendJson(res, r.code === "NOT_FOUND" ? 404 : r.code === "RATE_LIMIT" ? 429 : r.code === "INSUFFICIENT" ? 402 : 400, { code: r.code, message: r.message });
@@ -512,6 +536,8 @@ async function handleApi(ctx: ApiCtx, req: IncomingMessage, res: ServerResponse,
         const me = accounts.idOfSession(session);
         if (!me) return sendJson(res, 401, { code: "UNAUTHORIZED", message: "Silakan masuk lagi." });
         const b = parseBody(schemas.report, await readJson(req));
+        const dayAgo = clock.now() - 86_400_000;
+        if (social.reports.filter((r) => r.from === me && r.ts > dayAgo).length >= config.reportsPerDay) return sendJson(res, 429, { code: "RATE_LIMITED", message: "Batas laporan harian tercapai." });
         social.report(me, b.kind, b.target, b.reason ?? "");
         return sendJson(res, 200, { ok: true });
       }
