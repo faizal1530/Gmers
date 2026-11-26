@@ -522,6 +522,7 @@ async function main(): Promise<void> {
     check(true, "chat penonton tampil untuk penonton");
     await H.click('[data-testid="unwatch"]');
     await H.click('[data-section="komunitas"]');
+    await H.waitForSelector('[data-testid="feed-empty"], [data-testid="feed"]'); // tunggu umpan dimuat (tampilan dibangun ulang)
     await H.fill('[data-testid="compose"]', "Halo komunitas, ada yang main Ludo?");
     await H.click('[data-testid="compose-send"]');
     await H.waitForSelector('[data-testid="post"]');

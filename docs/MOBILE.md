@@ -7,6 +7,9 @@ Keputusan 25 Nov 2026 (menggantikan "Expo/React Native" di CLAUDE.md untuk tahap
 
 Izin Android: hanya INTERNET dan ACCESS_NETWORK_STATE. Tidak ada kamera, mikrofon, lokasi, atau kontak.
 
+## Unduhan APK dari situs
+APK debug disajikan oleh server di `/download/gmers-debug.apk` (berkas sumber: `apps/web/public/download/`, ikut ke `dist` saat `pnpm build`), dan ada tautan "Unduh APK Android" di tab Profil (disembunyikan di dalam aplikasi native). Setelah membuild APK baru, salin ke `apps/web/public/download/gmers-debug.apk`, perbarui `.sha256`-nya (`sha256sum`), lalu commit dan deploy. Ini APK **debug** (kunci debug), hanya untuk uji; jangan dibagikan luas sebelum ada build rilis bertanda tangan.
+
 ## Build Android (APK debug)
 Butuh JDK 21 dan Android SDK (platform 36, build-tools 36.0.0).
 ```bash

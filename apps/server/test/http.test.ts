@@ -120,6 +120,21 @@ describe("ekspor /admin/events.csv", () => {
 });
 
 describe("menyajikan situs", () => {
+  it("APK disajikan sebagai unduhan dengan tipe Android dan tanpa cache", async () => {
+    const dir = site();
+    mkdirSync(join(dir, "download"));
+    writeFileSync(join(dir, "download", "gmers-debug.apk"), Buffer.from([0x50, 0x4b, 3, 4, 1, 2, 3]));
+    const { base } = await boot({ staticDir: dir });
+    const r = await fetch(`${base}/download/gmers-debug.apk`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("application/vnd.android.package-archive");
+    expect(r.headers.get("content-disposition")).toBe('attachment; filename="gmers-debug.apk"');
+    expect(r.headers.get("cache-control")).toBe("no-cache");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3]));
+    expect((await fetch(`${base}/download/tidak-ada.apk`)).status).toBe(404);
+  });
+
   it("berkas statis, cache aset ber-hash, SPA untuk rute klien, 404 untuk berkas yang tak ada, dan header keamanan", async () => {
     const { base } = await boot({ staticDir: site() });
     const idx = await fetch(`${base}/`);

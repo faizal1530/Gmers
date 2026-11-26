@@ -223,6 +223,7 @@ const MIME: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".webmanifest": "application/manifest+json",
+  ".apk": "application/vnd.android.package-archive",
 };
 
 /** Header keamanan untuk semua jawaban. Skrip hanya dari origin sendiri; tidak ada pihak ketiga. */
@@ -279,6 +280,7 @@ function handleHttp(config: ServerConfig, csvPath: string | null, req: IncomingM
     const hashed = /\/assets\//.test(path);
     return send(res, 200, MIME[extname(file)] ?? "application/octet-stream", readFileSync(file), {
       "cache-control": hashed ? "public, max-age=31536000, immutable" : "no-cache",
+      ...(extname(file) === ".apk" ? { "content-disposition": `attachment; filename="${file.slice(file.lastIndexOf(sep) + 1)}"` } : {}),
     });
   }
   // Rute klien (/g/KODE, /privasi, dll.) dijawab dengan index.html; berkas yang tak ada dengan ekstensi = 404.

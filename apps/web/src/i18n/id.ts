@@ -165,6 +165,9 @@ export const id = {
     aboutTitle: "Tentang",
     about: "Gmers: main Gaple bareng teman. Akun opsional dan tanpa nomor HP atau email. Perangkat ini dikenali lewat kode acak di peramban.",
     privacy: "Kebijakan privasi",
+    androidTitle: "Aplikasi Android (uji)",
+    androidNote: "Versi uji untuk Android. Izinkan pemasangan dari sumber tidak dikenal. Belum dari Play Store dan butuh internet.",
+    androidLink: "Unduh APK Android",
   },
 
   home: {

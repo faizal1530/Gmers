@@ -13,3 +13,4 @@ strategi
 docs
 *.md
 !README.md
+apps/mobile

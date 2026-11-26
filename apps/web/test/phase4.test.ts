@@ -247,3 +247,16 @@ describe("Live", () => {
     expect(text(q(h.root, '[data-testid="live-empty"]'))).toBe(id.live.empty);
   });
 });
+
+describe("unduhan Android", () => {
+  it("Profil menampilkan tautan unduh APK, kecuali di dalam aplikasi native", () => {
+    const h = mount("/");
+    tab(h, "profile");
+    expect(q<HTMLAnchorElement>(h.root, '[data-testid="android-link"]').getAttribute("href")).toBe("/download/gmers-debug.apk");
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {};
+    const g = mount("/");
+    tab(g, "profile");
+    expect(g.root.querySelector('[data-testid="android-link"]')).toBeNull();
+    delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  });
+});
